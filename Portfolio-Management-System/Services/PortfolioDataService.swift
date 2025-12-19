@@ -133,23 +133,56 @@ class PortfolioDataService {
         return settings.first
     }
     
-    // MARK: - Fetch Historical Price
+    // MARK: - Fetch Historical Prices
     
-    private struct PriceOnlyResponse: Codable {
+    private struct PriceWithSymbolResponse: Codable {
+        let symbol: String
         let price: Decimal
+        let date: String
     }
     
     func fetchLatestPrice(symbol: String) async throws -> Decimal? {
-        let prices: [PriceOnlyResponse] = try await apiClient.get(
+        let prices: [PriceWithSymbolResponse] = try await apiClient.get(
             endpoint: "rest/v1/historical_prices",
             queryItems: [
-                URLQueryItem(name: "select", value: "price"),
+                URLQueryItem(name: "select", value: "symbol,price,date"),
                 URLQueryItem(name: "symbol", value: "eq.\(symbol)"),
                 URLQueryItem(name: "order", value: "date.desc"),
                 URLQueryItem(name: "limit", value: "1")
             ]
         )
         return prices.first?.price
+    }
+    
+    /// Batch fetch latest prices for multiple symbols in one query
+    func fetchLatestPrices(symbols: [String]) async throws -> [String: Decimal] {
+        guard !symbols.isEmpty else { return [:] }
+        
+        // Build IN query for all symbols
+        let symbolList = symbols.map { "\"\($0)\"" }.joined(separator: ",")
+        
+        let prices: [PriceWithSymbolResponse] = try await apiClient.get(
+            endpoint: "rest/v1/historical_prices",
+            queryItems: [
+                URLQueryItem(name: "select", value: "symbol,price,date"),
+                URLQueryItem(name: "symbol", value: "in.(\(symbolList))"),
+                URLQueryItem(name: "order", value: "date.desc")
+            ]
+        )
+        
+        // Group by symbol and take the latest price for each
+        var result: [String: Decimal] = [:]
+        var seenSymbols: Set<String> = []
+        
+        for price in prices {
+            if !seenSymbols.contains(price.symbol) {
+                result[price.symbol] = price.price
+                seenSymbols.insert(price.symbol)
+            }
+        }
+        
+        print("[DataService] Fetched prices for \(result.count)/\(symbols.count) symbols")
+        return result
     }
     
     // MARK: - Create Cash Account

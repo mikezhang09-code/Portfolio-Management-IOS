@@ -70,11 +70,9 @@ class SupabasePortfolioViewModel: ObservableObject {
     }
     
     var totalCostBasis: Decimal {
-        positions.reduce(0) { partial, position in
-            let costBasisLocal = position.totalCostBase
-            let exchangeRate = getExchangeRate(for: position.symbol)
-            return partial + (costBasisLocal * exchangeRate)
-        }
+        // totalCostBase is already in base currency (USD) and includes shares
+        // No FX conversion needed
+        positions.reduce(0) { $0 + $1.totalCostBase }
     }
     
     var totalPortfolioValue: Decimal {
@@ -173,14 +171,23 @@ class SupabasePortfolioViewModel: ObservableObject {
     
     // MARK: - Load Data
     
+    /// Main load method - only fetches all data on first login or manual refresh
+    /// For tab switches, uses cached data + refreshes prices only
     func loadPortfolioData() async {
-        // Skip reload if data was loaded recently (within 30 seconds) and not forced
-        if hasLoadedInitially, let lastLoad = lastLoadTime, Date().timeIntervalSince(lastLoad) < 30 {
+        // If already loaded, just refresh prices (fast)
+        if hasLoadedInitially {
+            await refreshPricesOnly()
             return
         }
         
+        // First load - fetch everything
+        await loadAllData()
+    }
+    
+    /// Full data load - called on login or manual refresh
+    private func loadAllData() async {
         // Show loading only on first load when no cache
-        if !hasLoadedInitially && !cacheService.hasCachedData {
+        if !cacheService.hasCachedData {
             isLoading = true
         } else {
             isRefreshing = true
@@ -228,7 +235,7 @@ class SupabasePortfolioViewModel: ObservableObject {
             await loadCashBalances()
             computeSummary()
             
-            print("[Portfolio] Loaded: \(positions.count) positions, \(cashAccounts.count) cash accounts, \(stockTransactions.count) stock transactions")
+            print("[Portfolio] Full load: \(positions.count) positions, \(cashAccounts.count) cash accounts, \(stockTransactions.count) transactions")
             
             // Save to cache for next time
             saveToCache()
@@ -248,9 +255,32 @@ class SupabasePortfolioViewModel: ObservableObject {
         isRefreshing = false
     }
     
+    /// Lightweight refresh - only updates prices (for tab switches)
+    private func refreshPricesOnly() async {
+        // Skip if refreshed recently (within 20 minutes)
+        let refreshInterval: TimeInterval = 20 * 60 // 20 minutes
+        if let lastLoad = lastLoadTime, Date().timeIntervalSince(lastLoad) < refreshInterval {
+            return
+        }
+        
+        isRefreshing = true
+        await loadLatestPrices()
+        computeSummary()
+        
+        // Update cache with new prices
+        cacheService.cacheLatestPrices(latestPrices)
+        cacheService.updateCacheTime()
+        
+        lastLoadTime = Date()
+        isRefreshing = false
+        print("[Portfolio] Prices refreshed")
+    }
+    
+    /// Manual refresh - reloads everything including cash and transactions
     func forceRefresh() async {
+        hasLoadedInitially = false
         lastLoadTime = nil
-        await loadPortfolioData()
+        await loadAllData()
     }
     
     // MARK: - Load Cash Balances
@@ -340,20 +370,22 @@ class SupabasePortfolioViewModel: ObservableObject {
     // MARK: - Load Latest Prices
     
     private func loadLatestPrices() async {
-        var prices: [String: Decimal] = [:]
+        let symbols = positions.map { $0.symbol }
+        guard !symbols.isEmpty else { return }
         
-        for position in positions {
-            do {
-                if let price = try await dataService.fetchLatestPrice(symbol: position.symbol) {
-                    prices[position.symbol] = price
-                }
-            } catch {
-                print("[Portfolio] Failed to fetch price for \(position.symbol): \(error.localizedDescription)")
+        do {
+            // Batch fetch all prices in one query (much faster)
+            let prices = try await dataService.fetchLatestPrices(symbols: symbols)
+            self.latestPrices = prices
+            print("[Portfolio] Loaded prices for \(prices.count)/\(symbols.count) symbols")
+        } catch {
+            print("[Portfolio] Failed to batch fetch prices: \(error.localizedDescription)")
+            // Fallback: use cached prices if available
+            if let cached = cacheService.loadCachedLatestPrices(), !cached.isEmpty {
+                self.latestPrices = cached
+                print("[Portfolio] Using \(cached.count) cached prices as fallback")
             }
         }
-        
-        self.latestPrices = prices
-        print("[Portfolio] Loaded prices for \(prices.count) symbols")
     }
     
     // MARK: - Load Currency Rates
