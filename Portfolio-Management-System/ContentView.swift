@@ -25,9 +25,9 @@ struct ContentView: View {
                     Label("Local", systemImage: "chart.bar.fill")
                 }
             
-            CapitalView(viewModel: viewModel)
+            SupabaseCashAccountsView()
                 .tabItem {
-                    Label("Capital", systemImage: "banknote.fill")
+                    Label("Cash", systemImage: "banknote.fill")
                 }
             
             TickerManagementView(viewModel: viewModel)
@@ -35,7 +35,7 @@ struct ContentView: View {
                     Label("Tickers", systemImage: "chart.line.uptrend.xyaxis")
                 }
             
-            TransactionManagementView(viewModel: viewModel)
+            SupabaseTransactionsView()
                 .tabItem {
                     Label("Transactions", systemImage: "arrow.left.arrow.right")
                 }

@@ -135,8 +135,12 @@ class PortfolioDataService {
     
     // MARK: - Fetch Historical Price
     
+    private struct PriceOnlyResponse: Codable {
+        let price: Decimal
+    }
+    
     func fetchLatestPrice(symbol: String) async throws -> Decimal? {
-        let prices: [SupabaseHistoricalPrice] = try await apiClient.get(
+        let prices: [PriceOnlyResponse] = try await apiClient.get(
             endpoint: "rest/v1/historical_prices",
             queryItems: [
                 URLQueryItem(name: "select", value: "price"),
@@ -165,7 +169,7 @@ class PortfolioDataService {
         return account
     }
     
-    // MARK: - Fetch Latest Snapshot
+    // MARK: - Fetch Snapshots
     
     func fetchLatestSnapshot() async throws -> SupabasePortfolioSnapshot? {
         let snapshots: [SupabasePortfolioSnapshot] = try await apiClient.get(
@@ -179,27 +183,65 @@ class PortfolioDataService {
         return snapshots.first
     }
     
+    func fetchYesterdaySnapshot() async throws -> SupabasePortfolioSnapshot? {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        let todayISO = dateFormatter.string(from: today)
+        
+        let snapshots: [SupabasePortfolioSnapshot] = try await apiClient.get(
+            endpoint: "rest/v1/portfolio_snapshots",
+            queryItems: [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "snapshot_date", value: "lt.\(todayISO)"),
+                URLQueryItem(name: "order", value: "snapshot_date.desc"),
+                URLQueryItem(name: "limit", value: "1")
+            ]
+        )
+        return snapshots.first
+    }
+    
     // MARK: - FX Rates
+    
+    func fetchCurrencyRatesToUSD() async throws -> [String: Decimal] {
+        return try await fetchLatestRatesToUSD()
+    }
+    
+    private struct CurrencyRateResponse: Codable {
+        let fromCurrency: String
+        let toCurrency: String
+        let rate: Decimal
+        let date: String
+        
+        enum CodingKeys: String, CodingKey {
+            case fromCurrency = "from_currency"
+            case toCurrency = "to_currency"
+            case rate
+            case date
+        }
+    }
+    
     private func fetchLatestRatesToUSD() async throws -> [String: Decimal] {
         // Fetch both direct and inverted USD pairs, then prefer the latest by currency
-        let directRates: [SupabaseCurrencyRate] = try await apiClient.get(
+        let directRates: [CurrencyRateResponse] = try await apiClient.get(
             endpoint: "rest/v1/currency_rates",
             queryItems: [
-                URLQueryItem(name: "select", value: "from_currency, to_currency, rate, date"),
+                URLQueryItem(name: "select", value: "from_currency,to_currency,rate,date"),
                 URLQueryItem(name: "to_currency", value: "eq.USD"),
                 URLQueryItem(name: "order", value: "date.desc")
             ]
         )
-        let invertedRatesSrc: [SupabaseCurrencyRate] = try await apiClient.get(
+        let invertedRatesSrc: [CurrencyRateResponse] = try await apiClient.get(
             endpoint: "rest/v1/currency_rates",
             queryItems: [
-                URLQueryItem(name: "select", value: "from_currency, to_currency, rate, date"),
+                URLQueryItem(name: "select", value: "from_currency,to_currency,rate,date"),
                 URLQueryItem(name: "from_currency", value: "eq.USD"),
                 URLQueryItem(name: "order", value: "date.desc")
             ]
         )
         
-        var latest: [String: (date: Date, rate: Decimal)] = [:]
+        var latest: [String: (date: String, rate: Decimal)] = [:]
         
         for r in directRates {
             let code = r.fromCurrency.uppercased().trimmingCharacters(in: .whitespaces)
@@ -232,34 +274,60 @@ class PortfolioDataService {
     
     struct AccountUSDValue: Identifiable { let id: UUID; let displayName: String; let nativeCurrency: String; let nativeBalance: Decimal; let exchangeRate: Decimal; let usdValue: Decimal }
     
+    private struct CashAccountResponse: Codable {
+        let id: UUID
+        let currency: String
+        let displayName: String
+        
+        enum CodingKeys: String, CodingKey {
+            case id
+            case currency
+            case displayName = "display_name"
+        }
+    }
+    
+    private struct CashTransactionResponse: Codable {
+        let cashAccountId: UUID
+        let amount: Decimal
+        let direction: String
+        
+        enum CodingKeys: String, CodingKey {
+            case cashAccountId = "cash_account_id"
+            case amount
+            case direction
+        }
+    }
+    
     func computeCashBalancesUSD(userEmail: String) async throws -> (accounts: [AccountUSDValue], totalUSD: Decimal) {
-        // Step 1: Fetch accounts joined with user by email
-        let accounts: [SupabaseCashAccount] = try await apiClient.get(
+        // Step 1: Fetch accounts
+        let accounts: [CashAccountResponse] = try await apiClient.get(
             endpoint: "rest/v1/portfolio_cash_accounts",
             queryItems: [
-                URLQueryItem(name: "select", value: "id,user_id,currency,display_name"),
-                // In PostgREST, we cannot filter by email here without a view; assume RLS scopes to the user
+                URLQueryItem(name: "select", value: "id,currency,display_name"),
                 URLQueryItem(name: "order", value: "display_name.asc")
             ]
         )
         
         // Step 1b: Fetch all cash transactions for these accounts
-        let transactions: [SupabaseCashTransaction] = try await apiClient.get(
+        let transactions: [CashTransactionResponse] = try await apiClient.get(
             endpoint: "rest/v1/cash_transactions",
             queryItems: [
-                URLQueryItem(name: "select", value: "cash_account_id, amount, direction, currency"),
+                URLQueryItem(name: "select", value: "cash_account_id,amount,direction"),
                 URLQueryItem(name: "order", value: "occurred_at.asc")
             ]
         )
         
-        // Native balances per account per currency (there may be multi-currency under same display name in screenshot)
+        // Native balances per account
         struct Key: Hashable { let accountId: UUID; let currency: String; let displayName: String }
         var nativeBalances: [Key: Decimal] = [:]
         
         for tx in transactions {
             guard let account = accounts.first(where: { $0.id == tx.cashAccountId }) else { continue }
             let key = Key(accountId: account.id, currency: account.currency.uppercased().trimmingCharacters(in: .whitespaces), displayName: account.displayName)
-            let signed = (tx.direction == .inflow) ? tx.amount : -tx.amount
+            
+            // Apply direction: inflow = +amount, outflow = -amount
+            let isInflow = tx.direction.lowercased() == "inflow"
+            let signed = isInflow ? tx.amount : -tx.amount
             nativeBalances[key, default: 0] += signed
         }
         

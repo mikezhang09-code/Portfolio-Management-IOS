@@ -15,6 +15,7 @@ struct SupabaseStock: Codable, Identifiable {
     let name: String
     let exchange: String?
     let currency: String?
+    let market: String?
     let createdAt: Date?
     let updatedAt: Date?
     
@@ -24,6 +25,7 @@ struct SupabaseStock: Codable, Identifiable {
         case name
         case exchange
         case currency
+        case market
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
