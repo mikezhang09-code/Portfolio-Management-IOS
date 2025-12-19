@@ -219,11 +219,34 @@ class PortfolioDataService {
     func fetchYesterdaySnapshot() async throws -> SupabasePortfolioSnapshot? {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withFullDate]
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+        
+        // Format dates as YYYY-MM-DD (matching web app format)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let yesterdayISO = dateFormatter.string(from: yesterday)
         let todayISO = dateFormatter.string(from: today)
         
-        let snapshots: [SupabasePortfolioSnapshot] = try await apiClient.get(
+        print("[DataService] Fetching yesterday snapshot, yesterday=\(yesterdayISO), today=\(todayISO)")
+        
+        // First try: get exact yesterday's snapshot (like web app)
+        let exactSnapshots: [SupabasePortfolioSnapshot] = try await apiClient.get(
+            endpoint: "rest/v1/portfolio_snapshots",
+            queryItems: [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "snapshot_date", value: "eq.\(yesterdayISO)"),
+                URLQueryItem(name: "order", value: "snapshot_date.desc"),
+                URLQueryItem(name: "limit", value: "1")
+            ]
+        )
+        
+        if let snapshot = exactSnapshots.first {
+            print("[DataService] Found exact yesterday snapshot: \(snapshot.snapshotDate), value=\(snapshot.totalValue)")
+            return snapshot
+        }
+        
+        // Fallback: get most recent snapshot before today (for weekends/holidays)
+        let fallbackSnapshots: [SupabasePortfolioSnapshot] = try await apiClient.get(
             endpoint: "rest/v1/portfolio_snapshots",
             queryItems: [
                 URLQueryItem(name: "select", value: "*"),
@@ -232,7 +255,14 @@ class PortfolioDataService {
                 URLQueryItem(name: "limit", value: "1")
             ]
         )
-        return snapshots.first
+        
+        if let snapshot = fallbackSnapshots.first {
+            print("[DataService] Found fallback snapshot: \(snapshot.snapshotDate), value=\(snapshot.totalValue)")
+            return snapshot
+        }
+        
+        print("[DataService] No yesterday snapshot found")
+        return nil
     }
     
     // MARK: - FX Rates

@@ -121,6 +121,9 @@ class SupabasePortfolioViewModel: ObservableObject {
         if let cached = cacheService.loadCachedStockTransactions() {
             self.stockTransactions = cached
         }
+        if let cached = cacheService.loadCachedCashTransactions() {
+            self.cashTransactions = cached
+        }
         if let cached = cacheService.loadCachedStocks() {
             self.stocks = cached
         }
@@ -138,6 +141,9 @@ class SupabasePortfolioViewModel: ObservableObject {
         }
         if let cached = cacheService.loadCachedYesterdaySnapshot() {
             self.yesterdaySnapshot = cached
+            print("[Portfolio] Cache: yesterdaySnapshot loaded, date=\(cached.snapshotDate), value=\(cached.totalValue)")
+        } else {
+            print("[Portfolio] Cache: NO yesterdaySnapshot found")
         }
         
         // Recompute summary from cached data
@@ -153,6 +159,7 @@ class SupabasePortfolioViewModel: ObservableObject {
         cacheService.cacheCashAccounts(cashAccounts)
         cacheService.cacheAccountUSDValues(accountUSDValues.map { CachedAccountUSDValue(from: $0) })
         cacheService.cacheStockTransactions(stockTransactions)
+        cacheService.cacheCashTransactions(cashTransactions)
         cacheService.cacheStocks(stocks)
         cacheService.cacheLatestPrices(latestPrices)
         cacheService.cacheCurrencyRates(currencyRatesToUSD)
@@ -164,6 +171,9 @@ class SupabasePortfolioViewModel: ObservableObject {
         }
         if let yesterdaySnapshot = yesterdaySnapshot {
             cacheService.cacheYesterdaySnapshot(yesterdaySnapshot)
+            print("[Portfolio] Cache: saving yesterdaySnapshot, date=\(yesterdaySnapshot.snapshotDate), value=\(yesterdaySnapshot.totalValue)")
+        } else {
+            print("[Portfolio] Cache: NO yesterdaySnapshot to save")
         }
         cacheService.updateCacheTime()
         print("[Portfolio] Saved to cache")
@@ -226,6 +236,13 @@ class SupabasePortfolioViewModel: ObservableObject {
             self.stocks = stocksResult
             self.snapshot = snapshotResult
             self.yesterdaySnapshot = yesterdaySnapshotResult
+            
+            // Debug: log snapshot fetch results
+            if let ys = yesterdaySnapshotResult {
+                print("[Portfolio] Server: yesterdaySnapshot fetched, date=\(ys.snapshotDate), value=\(ys.totalValue)")
+            } else {
+                print("[Portfolio] Server: NO yesterdaySnapshot returned")
+            }
             
             // Fetch latest prices and currency rates for all positions
             await loadLatestPrices()

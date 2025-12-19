@@ -15,12 +15,37 @@ class PortfolioCacheService {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     
+    // Static date formatters for decoding
+    private static let iso8601Full: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    
+    private static let iso8601Standard: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    
+    private static let dateOnly: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
+    
+    // Cache version - increment when format changes to auto-clear old cache
+    private static let cacheVersion = 2
+    private static let cacheVersionKey = "cache_version"
+    
     // Cache keys
     private enum CacheKey: String {
         case positions = "cache_positions"
         case cashAccounts = "cache_cash_accounts"
         case accountUSDValues = "cache_account_usd_values"
         case stockTransactions = "cache_stock_transactions"
+        case cashTransactions = "cache_cash_transactions"
         case stocks = "cache_stocks"
         case latestPrices = "cache_latest_prices"
         case currencyRates = "cache_currency_rates"
@@ -31,9 +56,39 @@ class PortfolioCacheService {
     }
     
     private init() {
-        // Configure encoder/decoder for dates
+        // Configure encoder/decoder for dates - use flexible ISO8601 parsing
         encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+            
+            // Try parsing with fractional seconds first
+            if let date = PortfolioCacheService.iso8601Full.date(from: dateString) {
+                return date
+            }
+            // Try without fractional seconds (handles 2025-12-18T16:00:00Z)
+            if let date = PortfolioCacheService.iso8601Standard.date(from: dateString) {
+                return date
+            }
+            // Try date-only format (YYYY-MM-DD)
+            if let date = PortfolioCacheService.dateOnly.date(from: dateString) {
+                return date
+            }
+            
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date: \(dateString)")
+        }
+        
+        // Check cache version and clear if outdated
+        migrateIfNeeded()
+    }
+    
+    private func migrateIfNeeded() {
+        let storedVersion = defaults.integer(forKey: PortfolioCacheService.cacheVersionKey)
+        if storedVersion < PortfolioCacheService.cacheVersion {
+            print("[Cache] Clearing outdated cache (v\(storedVersion) -> v\(PortfolioCacheService.cacheVersion))")
+            clearCache()
+            defaults.set(PortfolioCacheService.cacheVersion, forKey: PortfolioCacheService.cacheVersionKey)
+        }
     }
     
     // MARK: - Cache Status
@@ -85,6 +140,16 @@ class PortfolioCacheService {
     
     func loadCachedStockTransactions() -> [SupabaseStockTransaction]? {
         load(forKey: .stockTransactions)
+    }
+    
+    // MARK: - Cash Transactions
+    
+    func cacheCashTransactions(_ transactions: [SupabaseCashTransaction]) {
+        save(transactions, forKey: .cashTransactions)
+    }
+    
+    func loadCachedCashTransactions() -> [SupabaseCashTransaction]? {
+        load(forKey: .cashTransactions)
     }
     
     // MARK: - Stocks
@@ -174,9 +239,9 @@ class PortfolioCacheService {
     // MARK: - Clear Cache
     
     func clearCache() {
-        for key in [CacheKey.positions, .cashAccounts, .accountUSDValues, .stockTransactions, 
-                    .stocks, .latestPrices, .currencyRates, .settings, .snapshot, 
-                    .yesterdaySnapshot, .lastCacheTime] {
+        for key in [CacheKey.positions, .cashAccounts, .accountUSDValues, .stockTransactions,
+                    .cashTransactions, .stocks, .latestPrices, .currencyRates, .settings, 
+                    .snapshot, .yesterdaySnapshot, .lastCacheTime] {
             defaults.removeObject(forKey: key.rawValue)
         }
     }
