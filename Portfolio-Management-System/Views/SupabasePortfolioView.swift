@@ -212,28 +212,6 @@ private func formatSignedUSD(_ value: Decimal) -> String {
 
 // MARK: - Supporting Views
 
-struct MetricCard: View {
-    let label: String
-    let value: Decimal
-    let currency: String
-    let color: Color
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value, format: .currency(code: currency))
-                .font(.headline)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(12)
-        .background(color.opacity(0.1))
-        .cornerRadius(8)
-    }
-}
-
 struct CashAccountRow: View {
     let account: SupabaseCashAccount
     let balance: Decimal

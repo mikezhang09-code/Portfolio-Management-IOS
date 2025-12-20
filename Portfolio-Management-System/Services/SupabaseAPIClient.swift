@@ -174,4 +174,66 @@ class SupabaseAPIClient {
             throw APIError.networkError(error)
         }
     }
+    
+    // MARK: - Historical Data Endpoints
+    
+    func fetchHistoricalPortfolioSnapshots(
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        limit: Int = 365
+    ) async throws -> [HistoricalPortfolioSnapshot] {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "order", value: "snapshot_date.desc"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        
+        if let start = startDate {
+            let dateStr = dateFormatter.string(from: start)
+            queryItems.append(URLQueryItem(name: "snapshot_date", value: "gte.\(dateStr)"))
+        }
+        
+        if let end = endDate {
+            let dateStr = dateFormatter.string(from: end)
+            queryItems.append(URLQueryItem(name: "snapshot_date", value: "lte.\(dateStr)"))
+        }
+        
+        return try await get(
+            endpoint: "rest/v1/historical_portfolio_snapshots",
+            queryItems: queryItems
+        )
+    }
+    
+    func fetchHistoricalBenchmarkSnapshots(
+        benchmarkSymbol: String = "^GSPC",
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        limit: Int = 365
+    ) async throws -> [HistoricalBenchmarkSnapshot] {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "index_symbol", value: "eq.\(benchmarkSymbol)"),
+            URLQueryItem(name: "order", value: "snapshot_date.desc"),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withFullDate]
+        
+        if let start = startDate {
+            let dateStr = dateFormatter.string(from: start)
+            queryItems.append(URLQueryItem(name: "snapshot_date", value: "gte.\(dateStr)"))
+        }
+        
+        if let end = endDate {
+            let dateStr = dateFormatter.string(from: end)
+            queryItems.append(URLQueryItem(name: "snapshot_date", value: "lte.\(dateStr)"))
+        }
+        
+        return try await get(
+            endpoint: "rest/v1/historical_benchmark_snapshots",
+            queryItems: queryItems
+        )
+    }
 }

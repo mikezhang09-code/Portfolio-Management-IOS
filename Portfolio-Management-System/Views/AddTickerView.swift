@@ -92,7 +92,7 @@ struct AddTickerView: View {
 }
 
 #Preview {
-    @State var isPresented = true
+    @Previewable @State var isPresented = true
     return AddTickerView(
         viewModel: PortfolioViewModel(),
         isPresented: $isPresented

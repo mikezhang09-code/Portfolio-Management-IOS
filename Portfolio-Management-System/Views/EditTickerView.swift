@@ -76,8 +76,8 @@ struct EditTickerView: View {
 }
 
 #Preview {
-    @State var isPresented = true
-    @State var ticker = StockTicker(name: "Apple", code: "AAPL", market: "NASDAQ", currency: "USD")
+    @Previewable @State var isPresented = true
+    @Previewable @State var ticker = StockTicker(name: "Apple", code: "AAPL", market: "NASDAQ", currency: "USD")
     return EditTickerView(
         viewModel: PortfolioViewModel(),
         ticker: ticker,

@@ -19,10 +19,10 @@ struct ContentView: View {
                     Label("My Portfolio", systemImage: "chart.pie.fill")
                 }
             
-            // Local Overview (for offline/demo)
-            PortfolioOverviewView(viewModel: viewModel)
+            // Analysis - Portfolio Performance
+            AnalysisView()
                 .tabItem {
-                    Label("Local", systemImage: "chart.bar.fill")
+                    Label("Analysis", systemImage: "chart.line.uptrend.xyaxis")
                 }
             
             SupabaseCashAccountsView()
@@ -32,7 +32,7 @@ struct ContentView: View {
             
             TickerManagementView(viewModel: viewModel)
                 .tabItem {
-                    Label("Tickers", systemImage: "chart.line.uptrend.xyaxis")
+                    Label("Tickers", systemImage: "chart.bar.fill")
                 }
             
             SupabaseTransactionsView()

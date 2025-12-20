@@ -366,3 +366,111 @@ struct SupabaseCurrencyRate: Codable, Identifiable {
         case createdAt = "created_at"
     }
 }
+
+// MARK: - Historical Portfolio Snapshots
+
+struct HistoricalPortfolioSnapshot: Codable, Identifiable {
+    let id: UUID
+    let userId: UUID
+    let snapshotDate: Date
+    let totalValue: Decimal
+    let principle: Decimal
+    let totalShares: Decimal
+    let navPerShare: Decimal
+    let currency: String
+    let createdAt: Date?
+    
+    // Computed properties for compatibility
+    var totalCostBasis: Decimal { principle }
+    var totalGainLoss: Decimal { totalValue - principle }
+    var totalReturnPercent: Decimal {
+        guard principle > 0 else { return 0 }
+        return ((totalValue - principle) / principle) * 100
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case snapshotDate = "snapshot_date"
+        case totalValue = "total_value"
+        case principle
+        case totalShares = "total_shares"
+        case navPerShare = "nav_per_share"
+        case currency
+        case createdAt = "created_at"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        userId = try container.decode(UUID.self, forKey: .userId)
+        
+        let dateString = try container.decode(String.self, forKey: .snapshotDate)
+        if let parsedDate = HistoricalPortfolioSnapshot.dateFormatter.date(from: dateString) {
+            snapshotDate = parsedDate
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .snapshotDate,
+                                                   in: container,
+                                                   debugDescription: "Cannot decode date string \(dateString)")
+        }
+        
+        totalValue = try container.decode(Decimal.self, forKey: .totalValue)
+        principle = try container.decode(Decimal.self, forKey: .principle)
+        totalShares = try container.decode(Decimal.self, forKey: .totalShares)
+        navPerShare = try container.decode(Decimal.self, forKey: .navPerShare)
+        currency = try container.decode(String.self, forKey: .currency)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
+    
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+// MARK: - Historical Benchmark Snapshots
+
+struct HistoricalBenchmarkSnapshot: Codable, Identifiable {
+    let id: UUID
+    let indexSymbol: String
+    let snapshotDate: Date
+    let price: Decimal
+    let createdAt: Date?
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case indexSymbol = "index_symbol"
+        case snapshotDate = "snapshot_date"
+        case price
+        case createdAt = "created_at"
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        indexSymbol = try container.decode(String.self, forKey: .indexSymbol)
+        
+        let dateString = try container.decode(String.self, forKey: .snapshotDate)
+        if let parsedDate = HistoricalBenchmarkSnapshot.dateFormatter.date(from: dateString) {
+            snapshotDate = parsedDate
+        } else {
+            throw DecodingError.dataCorruptedError(forKey: .snapshotDate,
+                                                   in: container,
+                                                   debugDescription: "Cannot decode date string \(dateString)")
+        }
+        
+        price = try container.decode(Decimal.self, forKey: .price)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
+    
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}

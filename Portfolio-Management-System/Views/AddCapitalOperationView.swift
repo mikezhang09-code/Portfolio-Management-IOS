@@ -83,7 +83,7 @@ struct AddCapitalOperationView: View {
 }
 
 #Preview {
-    @State var isPresented = true
+    @Previewable @State var isPresented = true
     return AddCapitalOperationView(
         viewModel: PortfolioViewModel(),
         isPresented: $isPresented
