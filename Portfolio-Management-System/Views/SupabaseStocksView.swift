@@ -518,7 +518,7 @@ struct AddSupabaseStockView: View {
     }
     
     private var tickerPlaceholder: String {
-        "e.g., AAPL, 0700.HK, 000001.SS"
+        "e.g., AAPL, 0700, 000001"
     }
     
     var body: some View {
@@ -532,7 +532,7 @@ struct AddSupabaseStockView: View {
                             previewData = nil
                         }
                     
-                    Text("We'll fetch company name, market, and exchange from the live market.")
+                    Text("Enter the base ticker. We'll add market suffixes and fetch the live data.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } header: {
@@ -587,31 +587,31 @@ struct AddSupabaseStockView: View {
     }
     
     private var tickerFormatHint: String {
-        "Formats: US (AAPL), Hong Kong (0700.HK), China (000001.SS or 000001.SZ)"
+        "Formats: US (AAPL), Hong Kong (0700), China (000001)"
     }
     
     private func validateTicker(_ symbol: String) -> Bool {
-        let usRegex = try? NSRegularExpression(pattern: "^[A-Z]{1,5}$")
-        let hkRegex = try? NSRegularExpression(pattern: "^[0-9]{4,5}\\.HK$")
-        let cnRegex = try? NSRegularExpression(pattern: "^[0-9]{6}\\.(SS|SZ)$")
-        let range = NSRange(location: 0, length: symbol.utf16.count)
-        
-        return usRegex?.firstMatch(in: symbol, range: range) != nil
-            || hkRegex?.firstMatch(in: symbol, range: range) != nil
-            || cnRegex?.firstMatch(in: symbol, range: range) != nil
+        matches("^[A-Z]{1,5}$", in: symbol)
+            || matches("^[0-9]{4,5}(\\.HK)?$", in: symbol)
+            || matches("^[0-9]{6}(\\.(SS|SZ))?$", in: symbol)
     }
     
     private func inferMarket(for symbol: String) -> String? {
-        if symbol.hasSuffix(".HK") {
+        let upperSymbol = symbol.uppercased()
+        if upperSymbol.hasSuffix(".HK") {
             return "HK"
         }
-        if symbol.hasSuffix(".SS") || symbol.hasSuffix(".SZ") {
+        if upperSymbol.hasSuffix(".SS") || upperSymbol.hasSuffix(".SZ") {
             return "CN"
         }
-        let usRegex = try? NSRegularExpression(pattern: "^[A-Z]{1,5}$")
-        let range = NSRange(location: 0, length: symbol.utf16.count)
-        if usRegex?.firstMatch(in: symbol, range: range) != nil {
+        if matches("^[A-Z]{1,5}$", in: upperSymbol) {
             return "US"
+        }
+        if matches("^[0-9]{4,5}$", in: upperSymbol) {
+            return "HK"
+        }
+        if matches("^[0-9]{6}$", in: upperSymbol) {
+            return "CN"
         }
         return nil
     }
@@ -637,16 +637,55 @@ struct AddSupabaseStockView: View {
         }
         return "\(symbolText) • \(resolvedMarket)"
     }
+
+    private func resolveSymbolAndMarket(from input: String) -> (symbol: String, market: String)? {
+        let upperSymbol = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !upperSymbol.isEmpty else { return nil }
+
+        if upperSymbol.hasSuffix(".HK") {
+            return (upperSymbol, "HK")
+        }
+        if upperSymbol.hasSuffix(".SS") || upperSymbol.hasSuffix(".SZ") {
+            return (upperSymbol, "CN")
+        }
+        if matches("^[A-Z]{1,5}$", in: upperSymbol) {
+            return (upperSymbol, "US")
+        }
+        if matches("^[0-9]{4,5}$", in: upperSymbol) {
+            return (upperSymbol + ".HK", "HK")
+        }
+        if matches("^[0-9]{6}$", in: upperSymbol) {
+            return (upperSymbol + cnSuffix(for: upperSymbol), "CN")
+        }
+        return nil
+    }
+
+    private func cnSuffix(for code: String) -> String {
+        code.hasPrefix("6") ? ".SS" : ".SZ"
+    }
+
+    private func matches(_ pattern: String, in symbol: String) -> Bool {
+        symbol.range(of: pattern, options: .regularExpression) != nil
+    }
     
     private func handleSubmit() {
-        let symbol = trimmedSymbol
+        let inputSymbol = trimmedSymbol
         
         // Validate ticker format
-        if !validateTicker(symbol) {
-            errorMessage = "Invalid ticker format. Use AAPL, 0700.HK, or 000001.SS"
+        if !validateTicker(inputSymbol) {
+            errorMessage = "Invalid ticker format. Use AAPL, 0700, or 000001"
             showError = true
             return
         }
+
+        guard let resolved = resolveSymbolAndMarket(from: inputSymbol) else {
+            errorMessage = "Unable to infer market from ticker"
+            showError = true
+            return
+        }
+
+        let symbol = resolved.symbol
+        let market = resolved.market
         
         // Check if stock already exists
         if viewModel.stocks.contains(where: { $0.symbol.uppercased() == symbol }) {
@@ -660,7 +699,6 @@ struct AddSupabaseStockView: View {
         Task {
             do {
                 if previewData == nil {
-                    let market = inferMarket(for: symbol)
                     let fetched = try await viewModel.fetchStockPreview(symbol: symbol, market: market)
                     let preview = StockLookupResponse(
                         symbol: symbol,
@@ -673,11 +711,12 @@ struct AddSupabaseStockView: View {
                         isLoading = false
                     }
                 } else if let preview = previewData {
+                    let previewSymbol = preview.symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
                     let resolvedMarket = normalizedMarket(preview.market)
-                        ?? inferMarket(for: symbol)
+                        ?? inferMarket(for: previewSymbol)
                         ?? "US"
                     try await viewModel.addStock(
-                        symbol: symbol,
+                        symbol: previewSymbol,
                         name: preview.name,
                         market: resolvedMarket,
                         exchange: normalizedExchange(preview.exchange)

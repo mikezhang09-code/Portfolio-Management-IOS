@@ -387,7 +387,8 @@ class SupabasePortfolioViewModel: ObservableObject {
     // MARK: - Load Latest Prices
     
     private func loadLatestPrices() async {
-        let symbols = positions.map { $0.symbol }
+        let stockSymbols = stocks.map { $0.symbol }
+        let symbols = stockSymbols.isEmpty ? positions.map { $0.symbol } : stockSymbols
         guard !symbols.isEmpty else { return }
         
         do {
