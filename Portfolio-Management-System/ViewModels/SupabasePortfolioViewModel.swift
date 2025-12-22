@@ -9,6 +9,30 @@ import Foundation
 import SwiftUI
 import Combine
 
+// MARK: - Sorting Enums
+
+enum HoldingSortOption: String, CaseIterable {
+    case ticker = "Ticker"
+    case marketValue = "Market value"
+    case daysGain = "Day's gain"
+    case daysGainPercent = "Day's Gain (%)"
+    case totalGain = "Total gain"
+    case totalGainPercent = "Total Gain (%)"
+}
+
+enum SortDirection: String {
+    case ascending = "Low to high"
+    case descending = "High to low"
+    
+    var icon: String {
+        self == .descending ? "arrow.down" : "arrow.up"
+    }
+    
+    mutating func toggle() {
+        self = self == .ascending ? .descending : .ascending
+    }
+}
+
 @MainActor
 class SupabasePortfolioViewModel: ObservableObject {
     // Shared instance for use across all views
@@ -30,7 +54,12 @@ class SupabasePortfolioViewModel: ObservableObject {
     @Published var gainLossValue: Decimal = 0
     @Published var gainLossPercent: Decimal = 0
     @Published var latestPrices: [String: Decimal] = [:]
+    @Published var previousClosePrices: [String: Decimal] = [:]
     @Published var currencyRatesToUSD: [String: Decimal] = [:]
+    
+    // Sorting state
+    @Published var sortOption: HoldingSortOption = .marketValue
+    @Published var sortDirection: SortDirection = .descending
     
     @Published var isLoading = false
     @Published var isRefreshing = false
@@ -79,20 +108,99 @@ class SupabasePortfolioViewModel: ObservableObject {
         totalCashBalance + totalHoldingsValue
     }
     
-    // Sorted positions by market value (descending)
+    // Sorted positions based on current sort option and direction
     var sortedPositions: [SupabasePortfolioPosition] {
-        positions.sorted { pos1, pos2 in
-            let value1 = marketValueUSD(for: pos1)
-            let value2 = marketValueUSD(for: pos2)
-            return value1 > value2
+        let sorted = positions.sorted { pos1, pos2 in
+            let comparison: Bool
+            switch sortOption {
+            case .ticker:
+                comparison = pos1.symbol < pos2.symbol
+            case .marketValue:
+                comparison = marketValueUSD(for: pos1) > marketValueUSD(for: pos2)
+            case .daysGain:
+                comparison = daysGainUSD(for: pos1) > daysGainUSD(for: pos2)
+            case .daysGainPercent:
+                comparison = daysGainPercent(for: pos1) > daysGainPercent(for: pos2)
+            case .totalGain:
+                comparison = totalGainUSD(for: pos1) > totalGainUSD(for: pos2)
+            case .totalGainPercent:
+                comparison = totalGainPercent(for: pos1) > totalGainPercent(for: pos2)
+            }
+            return sortDirection == .descending ? comparison : !comparison
         }
+        return sorted
     }
     
-    private func marketValueUSD(for position: SupabasePortfolioPosition) -> Decimal {
+    func marketValueUSD(for position: SupabasePortfolioPosition) -> Decimal {
         let price = latestPrices[position.symbol] ?? 0
         let marketValueLocal = price * position.totalShares
         let exchangeRate = getExchangeRate(for: position.symbol)
         return marketValueLocal * exchangeRate
+    }
+    
+    func marketValueLocal(for position: SupabasePortfolioPosition) -> Decimal {
+        let price = latestPrices[position.symbol] ?? 0
+        return price * position.totalShares
+    }
+    
+    func daysGainUSD(for position: SupabasePortfolioPosition) -> Decimal {
+        let currentPrice = latestPrices[position.symbol] ?? 0
+        let previousPrice = previousClosePrices[position.symbol] ?? currentPrice
+        let priceChange = currentPrice - previousPrice
+        let exchangeRate = getExchangeRate(for: position.symbol)
+        return priceChange * position.totalShares * exchangeRate
+    }
+    
+    func daysGainPercent(for position: SupabasePortfolioPosition) -> Decimal {
+        let currentPrice = latestPrices[position.symbol] ?? 0
+        let previousPrice = previousClosePrices[position.symbol] ?? currentPrice
+        guard previousPrice != 0 else { return 0 }
+        return (currentPrice - previousPrice) / previousPrice * 100
+    }
+    
+    func totalGainUSD(for position: SupabasePortfolioPosition) -> Decimal {
+        return marketValueUSD(for: position) - position.totalCostBase
+    }
+    
+    func totalGainPercent(for position: SupabasePortfolioPosition) -> Decimal {
+        guard position.totalCostBase != 0 else { return 0 }
+        return totalGainUSD(for: position) / position.totalCostBase * 100
+    }
+    
+    /// Average cost per share in native/original currency (e.g., HKD for HK stocks)
+    func averageCostPerShareNative(for position: SupabasePortfolioPosition) -> Decimal {
+        guard position.totalShares != 0 else { return 0 }
+        // Use totalCostNative if available, otherwise fall back to totalCostBase
+        if let nativeCost = position.totalCostNative {
+            return nativeCost / position.totalShares
+        }
+        return position.totalCostBase / position.totalShares
+    }
+    
+    /// Total cost in USD (sum of buy transaction baseGrossAmount)
+    func totalCostPaid(for symbol: String) -> Decimal {
+        stockTransactions
+            .filter { $0.symbol == symbol && $0.tradeType == .buy }
+            .reduce(Decimal(0)) { $0 + abs($1.baseGrossAmount) }
+    }
+    
+    /// Total number of transactions (buy + sell + dividend)
+    func transactionCount(for symbol: String) -> Int {
+        stockTransactions.filter { $0.symbol == symbol }.count
+    }
+    
+    /// Total dividend income in USD (sum of dividend baseGrossAmount)
+    func dividendIncome(for symbol: String) -> Decimal {
+        stockTransactions
+            .filter { $0.symbol == symbol && $0.tradeType == .dividend }
+            .reduce(Decimal(0)) { $0 + abs($1.baseGrossAmount) }
+    }
+    
+    /// Realized P/L from sell transactions
+    func realisedGain(for symbol: String) -> Decimal {
+        stockTransactions
+            .filter { $0.symbol == symbol && $0.tradeType == .sell }
+            .reduce(Decimal(0)) { $0 + ($1.realizedPlBase ?? 0) }
     }
     
     // MARK: - Cache Loading
@@ -209,7 +317,7 @@ class SupabasePortfolioViewModel: ObservableObject {
             async let settingsTask = dataService.fetchPortfolioSettings()
             async let positionsTask = dataService.fetchPortfolioPositions()
             async let accountsTask = dataService.fetchCashAccounts()
-            async let stockTransactionsTask = dataService.fetchStockTransactions(limit: 50)
+            async let stockTransactionsTask = dataService.fetchStockTransactions(limit: 500)
             async let cashTransactionsTask = dataService.fetchCashTransactions(limit: 50)
             async let stocksTask = dataService.fetchStocks()
             async let snapshotTask = dataService.fetchLatestSnapshot()
@@ -244,8 +352,9 @@ class SupabasePortfolioViewModel: ObservableObject {
                 print("[Portfolio] Server: NO yesterdaySnapshot returned")
             }
             
-            // Fetch latest prices and currency rates for all positions
+            // Fetch latest prices, previous close prices, and currency rates for all positions
             await loadLatestPrices()
+            await loadPreviousClosePrices()
             await loadCurrencyRates()
             
             // Calculate cash balances and summary metrics
@@ -403,6 +512,22 @@ class SupabasePortfolioViewModel: ObservableObject {
                 self.latestPrices = cached
                 print("[Portfolio] Using \(cached.count) cached prices as fallback")
             }
+        }
+    }
+    
+    // MARK: - Load Previous Close Prices
+    
+    private func loadPreviousClosePrices() async {
+        let stockSymbols = stocks.map { $0.symbol }
+        let symbols = stockSymbols.isEmpty ? positions.map { $0.symbol } : stockSymbols
+        guard !symbols.isEmpty else { return }
+        
+        do {
+            let prices = try await dataService.fetchPreviousClosePrices(symbols: symbols)
+            self.previousClosePrices = prices
+            print("[Portfolio] Loaded previous close for \(prices.count)/\(symbols.count) symbols")
+        } catch {
+            print("[Portfolio] Failed to fetch previous close prices: \(error.localizedDescription)")
         }
     }
     

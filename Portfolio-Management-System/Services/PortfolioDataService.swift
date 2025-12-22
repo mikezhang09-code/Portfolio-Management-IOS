@@ -192,6 +192,38 @@ class PortfolioDataService {
         return result
     }
     
+    /// Fetch previous close prices (second most recent price) for multiple symbols
+    func fetchPreviousClosePrices(symbols: [String]) async throws -> [String: Decimal] {
+        guard !symbols.isEmpty else { return [:] }
+        
+        let symbolList = symbols.map { "\"\($0)\"" }.joined(separator: ",")
+        
+        let prices: [PriceWithSymbolResponse] = try await apiClient.get(
+            endpoint: "rest/v1/historical_prices",
+            queryItems: [
+                URLQueryItem(name: "select", value: "symbol,price,date"),
+                URLQueryItem(name: "symbol", value: "in.(\(symbolList))"),
+                URLQueryItem(name: "order", value: "date.desc")
+            ]
+        )
+        
+        // Group by symbol and take the second price (previous close) for each
+        var result: [String: Decimal] = [:]
+        var symbolPriceCount: [String: Int] = [:]
+        
+        for price in prices {
+            let count = symbolPriceCount[price.symbol] ?? 0
+            if count == 1 {
+                // This is the second price (previous close)
+                result[price.symbol] = price.price
+            }
+            symbolPriceCount[price.symbol] = count + 1
+        }
+        
+        print("[DataService] Fetched previous close for \(result.count)/\(symbols.count) symbols")
+        return result
+    }
+    
     // MARK: - Create Cash Account
     
     func createCashAccount(currency: String, displayName: String) async throws -> SupabaseCashAccount {

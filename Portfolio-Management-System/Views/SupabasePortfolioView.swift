@@ -9,6 +9,8 @@ import SwiftUI
 
 struct SupabasePortfolioView: View {
     @ObservedObject private var viewModel = SupabasePortfolioViewModel.shared
+    @State private var showSortSheet = false
+    @State private var expandedPositionId: UUID? = nil
     
     var body: some View {
         NavigationStack {
@@ -124,16 +126,40 @@ struct SupabasePortfolioView: View {
                         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                         .padding(.horizontal, 16)
                         
-                        // Holdings Section (sorted by market value)
+                        // Holdings Section
                         if !viewModel.positions.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
+                                // Holdings Header with Sort Button
                                 HStack {
-                                    Text("Holdings")
-                                        .font(.headline)
-                                    Text("(\(viewModel.positions.count))")
+                                    Text("All")
+                                        .font(.subheadline)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Color(.systemGray5))
+                                        .cornerRadius(16)
+                                    
+                                    Spacer()
+                                    
+                                    Text("Sort by")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
-                                    Spacer()
+                                    
+                                    Button {
+                                        showSortSheet = true
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Text(viewModel.sortOption.rawValue)
+                                                .font(.subheadline.weight(.medium))
+                                            Image(systemName: viewModel.sortDirection.icon)
+                                                .font(.caption)
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Color.blue)
+                                        .foregroundStyle(.white)
+                                        .cornerRadius(16)
+                                    }
+                                    
                                     if viewModel.isRefreshing {
                                         ProgressView()
                                             .scaleEffect(0.7)
@@ -141,18 +167,33 @@ struct SupabasePortfolioView: View {
                                 }
                                 .padding(.horizontal, 16)
                                 
-                                VStack(spacing: 8) {
+                                // Holdings List
+                                VStack(spacing: 0) {
                                     ForEach(viewModel.sortedPositions) { position in
-                                        PositionRow(
+                                        ExpandablePositionRow(
                                             position: position,
-                                            latestPrice: viewModel.latestPrices[position.symbol],
-                                            exchangeRate: viewModel.getExchangeRate(for: position.symbol)
+                                            viewModel: viewModel,
+                                            isExpanded: expandedPositionId == position.id,
+                                            onToggle: {
+                                                withAnimation(.easeInOut(duration: 0.2)) {
+                                                    if expandedPositionId == position.id {
+                                                        expandedPositionId = nil
+                                                    } else {
+                                                        expandedPositionId = position.id
+                                                    }
+                                                }
+                                            }
                                         )
+                                        
+                                        if position.id != viewModel.sortedPositions.last?.id {
+                                            Divider()
+                                                .padding(.horizontal, 16)
+                                        }
                                     }
                                 }
-                                .padding(12)
-                                .background(.gray.opacity(0.05))
-                                .cornerRadius(8)
+                                .padding(.vertical, 8)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(12)
                                 .padding(.horizontal, 16)
                             }
                         }
@@ -178,6 +219,15 @@ struct SupabasePortfolioView: View {
             }
             .refreshable {
                 await viewModel.forceRefresh()
+            }
+            .sheet(isPresented: $showSortSheet) {
+                HoldingSortSheet(
+                    selectedOption: $viewModel.sortOption,
+                    sortDirection: $viewModel.sortDirection,
+                    isPresented: $showSortSheet
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
             }
         }
         .task {
@@ -233,6 +283,304 @@ struct CashAccountRow: View {
                 .foregroundStyle(balance >= 0 ? Color.primary : Color.red)
         }
         .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Holdings Sort Sheet
+
+struct HoldingSortSheet: View {
+    @Binding var selectedOption: HoldingSortOption
+    @Binding var sortDirection: SortDirection
+    @Binding var isPresented: Bool
+    
+    @State private var tempOption: HoldingSortOption
+    @State private var tempDirection: SortDirection
+    
+    init(selectedOption: Binding<HoldingSortOption>, sortDirection: Binding<SortDirection>, isPresented: Binding<Bool>) {
+        self._selectedOption = selectedOption
+        self._sortDirection = sortDirection
+        self._isPresented = isPresented
+        self._tempOption = State(initialValue: selectedOption.wrappedValue)
+        self._tempDirection = State(initialValue: sortDirection.wrappedValue)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Sort by")
+                .font(.title2.bold())
+                .padding(.top, 8)
+            
+            VStack(spacing: 8) {
+                ForEach(HoldingSortOption.allCases, id: \.self) { option in
+                    Button {
+                        if tempOption == option {
+                            tempDirection.toggle()
+                        } else {
+                            tempOption = option
+                            tempDirection = option == .ticker ? .ascending : .descending
+                        }
+                    } label: {
+                        HStack {
+                            Text(option.rawValue)
+                                .foregroundStyle(tempOption == option ? .white : .primary)
+                            Spacer()
+                            if tempOption == option {
+                                HStack(spacing: 4) {
+                                    Text(tempDirection.rawValue)
+                                    Image(systemName: tempDirection.icon)
+                                }
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(tempOption == option ? Color.blue : Color(.systemGray5))
+                        .cornerRadius(12)
+                    }
+                }
+            }
+            
+            Spacer()
+            
+            VStack(spacing: 12) {
+                Button {
+                    selectedOption = tempOption
+                    sortDirection = tempDirection
+                    isPresented = false
+                } label: {
+                    Text("Apply")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(.systemBackground))
+                        .foregroundStyle(.primary)
+                        .cornerRadius(24)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color(.systemGray4), lineWidth: 1)
+                        )
+                }
+                
+                Button {
+                    isPresented = false
+                } label: {
+                    Text("Cancel")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.bottom, 16)
+        }
+        .padding(.horizontal, 24)
+        .background(Color(.systemBackground))
+    }
+}
+
+// MARK: - Expandable Position Row
+
+struct ExpandablePositionRow: View {
+    let position: SupabasePortfolioPosition
+    @ObservedObject var viewModel: SupabasePortfolioViewModel
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    
+    private var daysGainPercent: Decimal {
+        viewModel.daysGainPercent(for: position)
+    }
+    
+    private var totalGainPercent: Decimal {
+        viewModel.totalGainPercent(for: position)
+    }
+    
+    private var marketValue: Decimal {
+        viewModel.marketValueUSD(for: position)
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Main Row (always visible)
+            Button(action: onToggle) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(position.symbol)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            
+                            Text("Open")
+                                .font(.caption2.weight(.medium))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.blue)
+                                .foregroundStyle(.white)
+                                .cornerRadius(10)
+                        }
+                        
+                        HStack(spacing: 4) {
+                            Text(formatPercent(daysGainPercent) + " Today")
+                                .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
+                            Text("•")
+                                .foregroundStyle(.secondary)
+                            Text(formatPercent(totalGainPercent) + " Total")
+                                .foregroundStyle(totalGainPercent >= 0 ? .green : .red)
+                        }
+                        .font(.caption)
+                    }
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 8) {
+                        Text(formatNumber(marketValue))
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
+            // Expanded Details
+            if isExpanded {
+                VStack(spacing: 0) {
+                    // Detail rows
+                    VStack(spacing: 12) {
+                        detailRow("Avg. cost / share", value: formatDecimal(viewModel.averageCostPerShareNative(for: position)))
+                        detailRow("Total cost", value: formatNumber(position.totalCostBase))
+                        
+                        Divider()
+                        
+                        detailRow("Day's gain", value: formatSignedValue(viewModel.daysGainUSD(for: position), percent: daysGainPercent), valueColor: viewModel.daysGainUSD(for: position) >= 0 ? .green : .red)
+                        detailRow("Total gain", value: formatSignedValue(viewModel.totalGainUSD(for: position), percent: totalGainPercent), valueColor: viewModel.totalGainUSD(for: position) >= 0 ? .green : .red)
+                        detailRow("Realised gain", value: formatSignedValue(viewModel.realisedGain(for: position.symbol), percent: nil), valueColor: viewModel.realisedGain(for: position.symbol) >= 0 ? .green : .red)
+                        detailRow("Market value", value: formatNumber(marketValue))
+                        
+                        Divider()
+                        
+                        // Shares row with navigation
+                        HStack {
+                            Text("Shares")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Text(formatDecimal(position.totalShares))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                        .font(.subheadline)
+                        
+                        // Transactions row with navigation
+                        HStack {
+                            Text("Transactions")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Text("\(viewModel.transactionCount(for: position.symbol)) total")
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                        .font(.subheadline)
+                        
+                        Divider()
+                        
+                        // Total dividend income
+                        detailRow("Total dividend income", value: formatNumber(viewModel.dividendIncome(for: position.symbol)))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemGray6))
+                    
+                    // Add transaction button
+                    HStack {
+                        Image(systemName: "plus")
+                            .font(.caption)
+                        Text("Add transaction")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(.blue)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+    
+    private func detailRow(_ label: String, value: String, valueColor: Color = .primary) -> some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .foregroundStyle(valueColor)
+        }
+        .font(.subheadline)
+    }
+    
+    private func formatPercent(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 2
+        formatter.positivePrefix = "+"
+        formatter.negativePrefix = ""
+        let formatted = formatter.string(from: number) ?? "0.00"
+        return formatted + "%"
+    }
+    
+    private func formatNumber(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        formatter.minimumFractionDigits = 0
+        formatter.usesGroupingSeparator = true
+        return formatter.string(from: number) ?? "0"
+    }
+    
+    private func formatDecimal(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 2
+        formatter.usesGroupingSeparator = true
+        return formatter.string(from: number) ?? "0.00"
+    }
+    
+    private func formatSignedValue(_ value: Decimal, percent: Decimal?) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 2
+        formatter.usesGroupingSeparator = true
+        formatter.positivePrefix = "+"
+        formatter.negativePrefix = "-"
+        let valueStr = formatter.string(from: number) ?? "0.00"
+        
+        if let pct = percent {
+            let pctNumber = NSDecimalNumber(decimal: pct)
+            let pctFormatter = NumberFormatter()
+            pctFormatter.numberStyle = .decimal
+            pctFormatter.maximumFractionDigits = 2
+            pctFormatter.minimumFractionDigits = 2
+            pctFormatter.positivePrefix = "+"
+            pctFormatter.negativePrefix = ""
+            let pctStr = pctFormatter.string(from: pctNumber) ?? "0.00"
+            return "\(valueStr) (\(pctStr)%)"
+        }
+        return valueStr
     }
 }
 
