@@ -528,7 +528,8 @@ struct AddSupabaseStockView: View {
                     TextField(tickerPlaceholder, text: $symbol)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
-                        .onChange(of: symbol) { _ in
+                        // Reset preview when symbol changes
+                        .onChange(of: symbol) { _, _ in
                             previewData = nil
                         }
                     
