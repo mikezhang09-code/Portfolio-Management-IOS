@@ -7,6 +7,13 @@
 
 import Foundation
 
+struct StockLookupResponse: Decodable {
+    let symbol: String
+    let name: String
+    let exchange: String?
+    let market: String?
+}
+
 @MainActor
 class PortfolioDataService {
     static let shared = PortfolioDataService()
@@ -200,6 +207,46 @@ class PortfolioDataService {
             throw APIError.invalidResponse
         }
         return account
+    }
+    
+    // MARK: - Stock Management (CRUD)
+    
+    func createStock(symbol: String, name: String, market: String, exchange: String?) async throws {
+        struct CreateStockBody: Encodable {
+            let symbol: String
+            let name: String
+            let market: String
+            let exchange: String?
+        }
+        
+        let body = CreateStockBody(symbol: symbol, name: name, market: market, exchange: exchange)
+        let _: [SupabaseStock] = try await apiClient.post(endpoint: "rest/v1/stocks_master", body: body)
+    }
+    
+    func updateStock(id: UUID, name: String, exchange: String?) async throws {
+        struct UpdateStockBody: Encodable {
+            let name: String
+            let exchange: String?
+        }
+        
+        let body = UpdateStockBody(name: name, exchange: exchange)
+        try await apiClient.patch(endpoint: "rest/v1/stocks_master", id: id, body: body)
+    }
+    
+    func deleteStock(id: UUID) async throws {
+        try await apiClient.delete(endpoint: "rest/v1/stocks_master", id: id)
+    }
+
+    // MARK: - Stock Lookup (Finance API via Edge Function)
+
+    func fetchStockData(symbol: String, market: String?) async throws -> StockLookupResponse {
+        struct StockLookupBody: Encodable {
+            let symbol: String
+            let market: String?
+        }
+
+        let body = StockLookupBody(symbol: symbol, market: market)
+        return try await apiClient.postFunction(name: "fetch-stock-data", body: body)
     }
     
     // MARK: - Fetch Snapshots

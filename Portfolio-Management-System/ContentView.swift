@@ -30,9 +30,9 @@ struct ContentView: View {
                     Label("Cash", systemImage: "banknote.fill")
                 }
             
-            TickerManagementView(viewModel: viewModel)
+            SupabaseStocksView(viewModel: SupabasePortfolioViewModel.shared)
                 .tabItem {
-                    Label("Tickers", systemImage: "chart.bar.fill")
+                    Label("Stocks", systemImage: "chart.bar.fill")
                 }
             
             SupabaseTransactionsView()

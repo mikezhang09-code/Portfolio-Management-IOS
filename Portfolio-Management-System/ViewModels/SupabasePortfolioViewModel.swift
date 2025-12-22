@@ -453,4 +453,41 @@ class SupabasePortfolioViewModel: ObservableObject {
     func refreshData() async {
         await loadPortfolioData()
     }
+    
+    // MARK: - Stock Management
+
+    func fetchStockPreview(symbol: String, market: String?) async throws -> StockLookupResponse {
+        try await dataService.fetchStockData(symbol: symbol, market: market)
+    }
+    
+    func addStock(symbol: String, name: String, market: String, exchange: String?) async throws {
+        try await dataService.createStock(symbol: symbol, name: name, market: market, exchange: exchange)
+        
+        // Refresh stocks list
+        let updatedStocks = try await dataService.fetchStocks()
+        self.stocks = updatedStocks
+        cacheService.cacheStocks(stocks)
+    }
+    
+    func updateStock(id: UUID, name: String, exchange: String?) async throws {
+        try await dataService.updateStock(id: id, name: name, exchange: exchange)
+        
+        // Refresh stocks list
+        let updatedStocks = try await dataService.fetchStocks()
+        self.stocks = updatedStocks
+        cacheService.cacheStocks(stocks)
+    }
+    
+    func deleteStock(_ stock: SupabaseStock) async {
+        do {
+            try await dataService.deleteStock(id: stock.id)
+            
+            // Remove from local list
+            stocks.removeAll { $0.id == stock.id }
+            cacheService.cacheStocks(stocks)
+        } catch {
+            print("[Portfolio] Failed to delete stock: \(error.localizedDescription)")
+            errorMessage = "Failed to delete stock: \(error.localizedDescription)"
+        }
+    }
 }
