@@ -269,6 +269,162 @@ class PortfolioDataService {
         try await apiClient.delete(endpoint: "rest/v1/stocks_master", id: id)
     }
 
+    // MARK: - Transaction Management
+
+    func createTransactionGroup(
+        groupType: TransactionGroupType,
+        status: TransactionStatus,
+        occurredAt: Date,
+        settledAt: Date?,
+        notes: String?,
+        externalRef: String?
+    ) async throws -> SupabaseTransactionGroup {
+        struct CreateTransactionGroupBody: Encodable {
+            let group_type: TransactionGroupType
+            let status: TransactionStatus
+            let occurred_at: Date
+            let settled_at: Date?
+            let notes: String?
+            let external_ref: String?
+        }
+
+        let body = CreateTransactionGroupBody(
+            group_type: groupType,
+            status: status,
+            occurred_at: occurredAt,
+            settled_at: settledAt,
+            notes: notes,
+            external_ref: externalRef
+        )
+        let result: [SupabaseTransactionGroup] = try await apiClient.post(endpoint: "rest/v1/transaction_groups", body: body)
+        guard let group = result.first else {
+            throw APIError.invalidResponse
+        }
+        return group
+    }
+
+    func createCashTransaction(
+        groupId: UUID,
+        cashAccountId: UUID,
+        legType: CashTransactionLegType,
+        direction: CashTransactionDirection,
+        amount: Decimal,
+        currency: String,
+        fxRate: Decimal,
+        baseAmount: Decimal,
+        occurredAt: Date,
+        settledAt: Date,
+        relatedStockTransactionId: UUID?,
+        notes: String?
+    ) async throws -> SupabaseCashTransaction {
+        struct CreateCashTransactionBody: Encodable {
+            let group_id: UUID
+            let cash_account_id: UUID
+            let leg_type: CashTransactionLegType
+            let direction: CashTransactionDirection
+            let amount: Decimal
+            let currency: String
+            let fx_rate: Decimal
+            let base_amount: Decimal
+            let occurred_at: Date
+            let settled_at: Date
+            let related_stock_transaction_id: UUID?
+            let notes: String?
+        }
+
+        let body = CreateCashTransactionBody(
+            group_id: groupId,
+            cash_account_id: cashAccountId,
+            leg_type: legType,
+            direction: direction,
+            amount: amount,
+            currency: currency,
+            fx_rate: fxRate,
+            base_amount: baseAmount,
+            occurred_at: occurredAt,
+            settled_at: settledAt,
+            related_stock_transaction_id: relatedStockTransactionId,
+            notes: notes
+        )
+        let result: [SupabaseCashTransaction] = try await apiClient.post(endpoint: "rest/v1/cash_transactions", body: body)
+        guard let transaction = result.first else {
+            throw APIError.invalidResponse
+        }
+        return transaction
+    }
+
+    func createStockTransaction(
+        groupId: UUID,
+        stockId: UUID,
+        symbol: String,
+        tradeType: StockTradeType,
+        tradeDate: Date,
+        settlementDate: Date?,
+        quantity: Decimal,
+        pricePerShare: Decimal,
+        grossAmount: Decimal,
+        fees: Decimal,
+        currency: String,
+        fxRate: Decimal,
+        baseGrossAmount: Decimal,
+        baseFees: Decimal,
+        status: TransactionStatus,
+        notes: String?
+    ) async throws -> SupabaseStockTransaction {
+        struct CreateStockTransactionBody: Encodable {
+            let group_id: UUID
+            let stock_id: UUID
+            let symbol: String
+            let trade_type: StockTradeType
+            let trade_date: Date
+            let settlement_date: Date?
+            let quantity: Decimal
+            let price_per_share: Decimal
+            let gross_amount: Decimal
+            let fees: Decimal
+            let currency: String
+            let fx_rate: Decimal
+            let base_gross_amount: Decimal
+            let base_fees: Decimal
+            let status: TransactionStatus
+            let notes: String?
+            let average_cost_snapshot: Decimal?
+            let total_shares_snapshot: Decimal?
+            let total_cost_base_snapshot: Decimal?
+            let realized_pl_base: Decimal?
+            let linked_cash_transaction_id: UUID?
+        }
+
+        let body = CreateStockTransactionBody(
+            group_id: groupId,
+            stock_id: stockId,
+            symbol: symbol,
+            trade_type: tradeType,
+            trade_date: tradeDate,
+            settlement_date: settlementDate,
+            quantity: quantity,
+            price_per_share: pricePerShare,
+            gross_amount: grossAmount,
+            fees: fees,
+            currency: currency,
+            fx_rate: fxRate,
+            base_gross_amount: baseGrossAmount,
+            base_fees: baseFees,
+            status: status,
+            notes: notes,
+            average_cost_snapshot: nil,
+            total_shares_snapshot: nil,
+            total_cost_base_snapshot: nil,
+            realized_pl_base: nil,
+            linked_cash_transaction_id: nil
+        )
+        let result: [SupabaseStockTransaction] = try await apiClient.post(endpoint: "rest/v1/stock_transactions", body: body)
+        guard let transaction = result.first else {
+            throw APIError.invalidResponse
+        }
+        return transaction
+    }
+
     // MARK: - Stock Lookup (Finance API via Edge Function)
 
     func fetchStockData(symbol: String, market: String?) async throws -> StockLookupResponse {

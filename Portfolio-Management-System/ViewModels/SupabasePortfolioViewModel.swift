@@ -579,6 +579,100 @@ class SupabasePortfolioViewModel: ObservableObject {
     func refreshData() async {
         await loadPortfolioData()
     }
+
+    // MARK: - Transaction Management
+
+    func createTransactionGroup(
+        groupType: TransactionGroupType,
+        status: TransactionStatus,
+        occurredAt: Date,
+        settledAt: Date?,
+        notes: String?,
+        externalRef: String?
+    ) async throws -> SupabaseTransactionGroup {
+        try await dataService.createTransactionGroup(
+            groupType: groupType,
+            status: status,
+            occurredAt: occurredAt,
+            settledAt: settledAt,
+            notes: notes,
+            externalRef: externalRef
+        )
+    }
+
+    func createCashTransaction(
+        groupId: UUID,
+        cashAccountId: UUID,
+        legType: CashTransactionLegType,
+        direction: CashTransactionDirection,
+        amount: Decimal,
+        currency: String,
+        fxRate: Decimal,
+        baseAmount: Decimal,
+        occurredAt: Date,
+        settledAt: Date,
+        relatedStockTransactionId: UUID?,
+        notes: String?
+    ) async throws -> SupabaseCashTransaction {
+        let transaction = try await dataService.createCashTransaction(
+            groupId: groupId,
+            cashAccountId: cashAccountId,
+            legType: legType,
+            direction: direction,
+            amount: amount,
+            currency: currency,
+            fxRate: fxRate,
+            baseAmount: baseAmount,
+            occurredAt: occurredAt,
+            settledAt: settledAt,
+            relatedStockTransactionId: relatedStockTransactionId,
+            notes: notes
+        )
+        cashTransactions.insert(transaction, at: 0)
+        cacheService.cacheCashTransactions(cashTransactions)
+        return transaction
+    }
+
+    func createStockTransaction(
+        groupId: UUID,
+        stockId: UUID,
+        symbol: String,
+        tradeType: StockTradeType,
+        tradeDate: Date,
+        settlementDate: Date?,
+        quantity: Decimal,
+        pricePerShare: Decimal,
+        grossAmount: Decimal,
+        fees: Decimal,
+        currency: String,
+        fxRate: Decimal,
+        baseGrossAmount: Decimal,
+        baseFees: Decimal,
+        status: TransactionStatus,
+        notes: String?
+    ) async throws -> SupabaseStockTransaction {
+        let transaction = try await dataService.createStockTransaction(
+            groupId: groupId,
+            stockId: stockId,
+            symbol: symbol,
+            tradeType: tradeType,
+            tradeDate: tradeDate,
+            settlementDate: settlementDate,
+            quantity: quantity,
+            pricePerShare: pricePerShare,
+            grossAmount: grossAmount,
+            fees: fees,
+            currency: currency,
+            fxRate: fxRate,
+            baseGrossAmount: baseGrossAmount,
+            baseFees: baseFees,
+            status: status,
+            notes: notes
+        )
+        stockTransactions.insert(transaction, at: 0)
+        cacheService.cacheStockTransactions(stockTransactions)
+        return transaction
+    }
     
     // MARK: - Stock Management
 

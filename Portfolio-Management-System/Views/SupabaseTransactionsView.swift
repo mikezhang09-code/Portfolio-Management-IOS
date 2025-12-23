@@ -13,6 +13,7 @@ struct SupabaseTransactionsView: View {
     @State private var selectedTradeType: StockTradeType? = nil
     @State private var isSymbolPickerPresented = false
     @State private var symbolSearchText = ""
+    @State private var showingAddTransaction = false
 
     private var availableSymbols: [String] {
         let symbols = Set(viewModel.stockTransactions.map { $0.symbol })
@@ -157,14 +158,23 @@ struct SupabaseTransactionsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task {
-                            await viewModel.forceRefresh()
+                    HStack(spacing: 12) {
+                        Button {
+                            showingAddTransaction = true
+                        } label: {
+                            Image(systemName: "plus")
                         }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                        .disabled(viewModel.isLoading)
+
+                        Button {
+                            Task {
+                                await viewModel.forceRefresh()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(viewModel.isLoading || viewModel.isRefreshing)
                     }
-                    .disabled(viewModel.isLoading || viewModel.isRefreshing)
                 }
             }
             .refreshable {
@@ -176,6 +186,12 @@ struct SupabaseTransactionsView: View {
                 availableSymbols: availableSymbols,
                 selectedSymbol: $selectedSymbol,
                 searchText: $symbolSearchText
+            )
+        }
+        .sheet(isPresented: $showingAddTransaction) {
+            AddSupabaseTransactionView(
+                viewModel: viewModel,
+                isPresented: $showingAddTransaction
             )
         }
         .task {
