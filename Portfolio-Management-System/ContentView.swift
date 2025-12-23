@@ -19,17 +19,6 @@ struct ContentView: View {
                     Label("My Portfolio", systemImage: "chart.pie.fill")
                 }
             
-            // Analysis - Portfolio Performance
-            AnalysisView()
-                .tabItem {
-                    Label("Analysis", systemImage: "chart.line.uptrend.xyaxis")
-                }
-            
-            SupabaseCashAccountsView()
-                .tabItem {
-                    Label("Cash", systemImage: "banknote.fill")
-                }
-            
             SupabaseStocksView(viewModel: SupabasePortfolioViewModel.shared)
                 .tabItem {
                     Label("Stocks", systemImage: "chart.bar.fill")
@@ -38,6 +27,17 @@ struct ContentView: View {
             SupabaseTransactionsView()
                 .tabItem {
                     Label("Transactions", systemImage: "arrow.left.arrow.right")
+                }
+
+            // Analysis - Portfolio Performance
+            AnalysisView()
+                .tabItem {
+                    Label("Analysis", systemImage: "chart.line.uptrend.xyaxis")
+                }
+
+            SupabaseCashAccountsView()
+                .tabItem {
+                    Label("Cash", systemImage: "banknote.fill")
                 }
             
             SettingsView()

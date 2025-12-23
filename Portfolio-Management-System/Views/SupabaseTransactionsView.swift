@@ -11,6 +11,8 @@ struct SupabaseTransactionsView: View {
     @ObservedObject private var viewModel = SupabasePortfolioViewModel.shared
     @State private var selectedSymbol: String = "All Tickers"
     @State private var selectedTradeType: StockTradeType? = nil
+    @State private var isSymbolPickerPresented = false
+    @State private var symbolSearchText = ""
 
     private var availableSymbols: [String] {
         let symbols = Set(viewModel.stockTransactions.map { $0.symbol })
@@ -72,15 +74,8 @@ struct SupabaseTransactionsView: View {
                                 .font(.headline)
                             
                             HStack(spacing: 12) {
-                                Menu {
-                                    Button("All Tickers") {
-                                        selectedSymbol = "All Tickers"
-                                    }
-                                    ForEach(availableSymbols, id: \.self) { symbol in
-                                        Button(symbol) {
-                                            selectedSymbol = symbol
-                                        }
-                                    }
+                                Button {
+                                    isSymbolPickerPresented = true
                                 } label: {
                                     filterPill(
                                         title: selectedSymbol,
@@ -176,6 +171,13 @@ struct SupabaseTransactionsView: View {
                 await viewModel.forceRefresh()
             }
         }
+        .sheet(isPresented: $isSymbolPickerPresented) {
+            SymbolPickerView(
+                availableSymbols: availableSymbols,
+                selectedSymbol: $selectedSymbol,
+                searchText: $symbolSearchText
+            )
+        }
         .task {
             await viewModel.loadPortfolioData()
         }
@@ -193,6 +195,76 @@ struct SupabaseTransactionsView: View {
         .background(Color(.systemGray6))
         .clipShape(Capsule())
         .foregroundStyle(.primary)
+    }
+}
+
+private struct SymbolPickerView: View {
+    let availableSymbols: [String]
+    @Binding var selectedSymbol: String
+    @Binding var searchText: String
+    @Environment(\.dismiss) private var dismiss
+
+    private var matchingSymbols: [String] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return availableSymbols
+        }
+        return availableSymbols.filter { symbol in
+            symbol.range(of: trimmed, options: .caseInsensitive) != nil
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button {
+                    selectedSymbol = "All Tickers"
+                    dismiss()
+                } label: {
+                    selectionRow(title: "All Tickers", isSelected: selectedSymbol == "All Tickers")
+                }
+
+                if matchingSymbols.isEmpty {
+                    Text("No matching tickers")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(matchingSymbols, id: \.self) { symbol in
+                        Button {
+                            selectedSymbol = symbol
+                            dismiss()
+                        } label: {
+                            selectionRow(title: symbol, isSelected: selectedSymbol == symbol)
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search ticker")
+            .textInputAutocapitalization(.characters)
+            .disableAutocorrection(true)
+            .navigationTitle("Select Ticker")
+            .navigationBarTitleDisplayMode(.inline)
+            .onDisappear {
+                searchText = ""
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func selectionRow(title: String, isSelected: Bool) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.blue)
+            }
+        }
     }
 }
 

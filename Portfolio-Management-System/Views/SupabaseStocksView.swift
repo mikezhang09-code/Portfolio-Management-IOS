@@ -14,6 +14,19 @@ struct SupabaseStocksView: View {
     @State private var selectedStock: SupabaseStock?
     @State private var isUpdatingPrices = false
     @State private var showingEditSheet = false
+    @State private var stockSearchText = ""
+
+    private var filteredStocks: [SupabaseStock] {
+        let trimmed = stockSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return viewModel.stocks
+        }
+
+        return viewModel.stocks.filter { stock in
+            stock.symbol.range(of: trimmed, options: .caseInsensitive) != nil
+                || stock.name.range(of: trimmed, options: .caseInsensitive) != nil
+        }
+    }
     
     var body: some View {
         NavigationStack {
@@ -30,12 +43,14 @@ struct SupabaseStocksView: View {
                 if selectedTab == 0 {
                     MarketOverviewTab(
                         viewModel: viewModel,
+                        stocks: filteredStocks,
                         selectedStock: $selectedStock,
                         isUpdatingPrices: $isUpdatingPrices
                     )
                 } else {
                     ManageStocksTab(
                         viewModel: viewModel,
+                        stocks: filteredStocks,
                         showingAddStock: $showingAddStock,
                         selectedStock: $selectedStock,
                         showingEditSheet: $showingEditSheet,
@@ -45,6 +60,9 @@ struct SupabaseStocksView: View {
             }
             .navigationTitle("Stocks")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $stockSearchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search ticker")
+            .textInputAutocapitalization(.characters)
+            .disableAutocorrection(true)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
@@ -98,16 +116,19 @@ struct SupabaseStocksView: View {
 
 struct MarketOverviewTab: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
+    let stocks: [SupabaseStock]
     @Binding var selectedStock: SupabaseStock?
     @Binding var isUpdatingPrices: Bool
     
     var body: some View {
         if viewModel.stocks.isEmpty {
             EmptyStocksView()
+        } else if stocks.isEmpty {
+            EmptyStockSearchView()
         } else {
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    ForEach(viewModel.stocks) { stock in
+                    ForEach(stocks) { stock in
                         StockCardView(
                             stock: stock,
                             price: viewModel.latestPrices[stock.symbol],
@@ -128,6 +149,7 @@ struct MarketOverviewTab: View {
 
 struct ManageStocksTab: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
+    let stocks: [SupabaseStock]
     @Binding var showingAddStock: Bool
     @Binding var selectedStock: SupabaseStock?
     @Binding var showingEditSheet: Bool
@@ -136,9 +158,11 @@ struct ManageStocksTab: View {
     var body: some View {
         if viewModel.stocks.isEmpty {
             EmptyStocksView()
+        } else if stocks.isEmpty {
+            EmptyStockSearchView()
         } else {
             List {
-                ForEach(viewModel.stocks) { stock in
+                ForEach(stocks) { stock in
                     StockListRow(
                         stock: stock,
                         price: viewModel.latestPrices[stock.symbol]
@@ -175,6 +199,23 @@ struct EmptyStocksView: View {
             Text("No Stocks")
                 .font(.headline)
             Text("Add your first stock or ETF to get started")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+    }
+}
+
+struct EmptyStockSearchView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+            Text("No matching stocks")
+                .font(.headline)
+            Text("Try a different ticker or name.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
