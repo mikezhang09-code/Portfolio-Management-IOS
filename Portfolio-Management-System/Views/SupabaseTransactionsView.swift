@@ -9,11 +9,28 @@ import SwiftUI
 
 struct SupabaseTransactionsView: View {
     @ObservedObject private var viewModel = SupabasePortfolioViewModel.shared
+    @State private var selectedSymbol: String = "All Tickers"
+    @State private var selectedTradeType: StockTradeType? = nil
+
+    private var availableSymbols: [String] {
+        let symbols = Set(viewModel.stockTransactions.map { $0.symbol })
+        return symbols.sorted()
+    }
+
+    private var filteredTransactions: [SupabaseStockTransaction] {
+        viewModel.stockTransactions
+            .filter { transaction in
+                let matchesSymbol = selectedSymbol == "All Tickers" || transaction.symbol == selectedSymbol
+                let matchesType = selectedTradeType == nil || transaction.tradeType == selectedTradeType
+                return matchesSymbol && matchesType
+            }
+            .sorted { $0.tradeDate > $1.tradeDate }
+    }
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
                     if viewModel.isLoading {
                         ProgressView("Loading transactions...")
                             .padding()
@@ -49,43 +66,97 @@ struct SupabaseTransactionsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(32)
                     } else {
-                        // Transactions Header
-                        HStack {
-                            Text("Recent Transactions")
+                        // Filters
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Stock Transactions")
                                 .font(.headline)
-                            Text("(\(viewModel.stockTransactions.count))")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            if viewModel.isRefreshing {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        
-                        // Transactions List
-                        VStack(spacing: 0) {
-                            ForEach(viewModel.stockTransactions) { transaction in
-                                SupabaseTransactionDetailRow(
-                                    transaction: transaction,
-                                    stockName: viewModel.getStockName(for: transaction.symbol)
-                                )
-                                if transaction.id != viewModel.stockTransactions.last?.id {
-                                    Divider()
-                                        .padding(.horizontal, 12)
+                            
+                            HStack(spacing: 12) {
+                                Menu {
+                                    Button("All Tickers") {
+                                        selectedSymbol = "All Tickers"
+                                    }
+                                    ForEach(availableSymbols, id: \.self) { symbol in
+                                        Button(symbol) {
+                                            selectedSymbol = symbol
+                                        }
+                                    }
+                                } label: {
+                                    filterPill(
+                                        title: selectedSymbol,
+                                        systemImage: "chevron.down"
+                                    )
+                                }
+                                
+                                Menu {
+                                    Button("All Types") {
+                                        selectedTradeType = nil
+                                    }
+                                    Button("Buy") {
+                                        selectedTradeType = .buy
+                                    }
+                                    Button("Sell") {
+                                        selectedTradeType = .sell
+                                    }
+                                    Button("Dividend") {
+                                        selectedTradeType = .dividend
+                                    }
+                                } label: {
+                                    filterPill(
+                                        title: selectedTradeType?.rawValue.capitalized ?? "All Types",
+                                        systemImage: "line.3.horizontal.decrease.circle"
+                                    )
+                                }
+                                
+                                Spacer()
+                                
+                                if viewModel.isRefreshing {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
                                 }
                             }
                         }
-                        .background(Color(.systemBackground))
-                        .cornerRadius(12)
-                        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 1)
                         .padding(.horizontal, 16)
-                        
-                        Spacer()
-                            .frame(height: 20)
+
+                        // Summary row
+                        HStack {
+                            Text("\(filteredTransactions.count) Transactions")
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(selectedSymbol == "All Tickers" ? "All Tickers" : selectedSymbol)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+
+                        // Transactions List
+                        VStack(spacing: 12) {
+                            if filteredTransactions.isEmpty {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "line.3.horizontal.decrease.circle")
+                                        .font(.system(size: 32))
+                                        .foregroundStyle(.secondary)
+                                    Text("No matching transactions")
+                                        .font(.headline)
+                                    Text("Try adjusting the filters to see more activity.")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 32)
+                            } else {
+                                ForEach(filteredTransactions) { transaction in
+                                    SupabaseTransactionDetailRow(
+                                        transaction: transaction,
+                                        stockName: viewModel.getStockName(for: transaction.symbol)
+                                    )
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
                     }
                 }
+                .padding(.vertical, 12)
             }
             .navigationTitle("Transactions")
             .navigationBarTitleDisplayMode(.inline)
@@ -108,6 +179,20 @@ struct SupabaseTransactionsView: View {
         .task {
             await viewModel.loadPortfolioData()
         }
+    }
+
+    private func filterPill(title: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Image(systemName: systemImage)
+                .font(.caption)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color(.systemGray6))
+        .clipShape(Capsule())
+        .foregroundStyle(.primary)
     }
 }
 
@@ -140,53 +225,68 @@ struct SupabaseTransactionDetailRow: View {
     }
     
     var body: some View {
-        HStack(spacing: 12) {
-            // Type icon
-            Image(systemName: typeIcon)
-                .font(.system(size: 24))
-                .foregroundStyle(typeColor)
-                .frame(width: 32)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(transaction.symbol)
-                        .font(.headline)
-                    Text(transaction.tradeType.rawValue.uppercased())
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(typeColor.opacity(0.15))
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(typeColor.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: typeIcon)
+                        .font(.system(size: 22))
                         .foregroundStyle(typeColor)
-                        .cornerRadius(4)
                 }
-                
-                if let name = stockName {
-                    Text(name)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(transaction.symbol)
+                            .font(.headline)
+                        Text(transaction.tradeType.rawValue.uppercased())
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(typeColor.opacity(0.15))
+                            .foregroundStyle(typeColor)
+                            .clipShape(Capsule())
+                    }
+
+                    if let name = stockName {
+                        Text(name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Text(transaction.tradeDate.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
-                
-                Text(transaction.tradeDate.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(formatTotal(transaction.quantity * transaction.pricePerShare))
+                        .font(.subheadline.weight(.semibold))
+                    Text(formatShares(transaction.quantity))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(formatShares(transaction.quantity))
-                    .font(.subheadline.weight(.semibold))
-                Text("@ \(formatPrice(transaction.pricePerShare))")
+
+            Divider()
+
+            HStack {
+                Text("Price")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(formatTotal(transaction.quantity * transaction.pricePerShare))
-                    .font(.caption)
-                    .foregroundStyle(.primary)
+                Spacer()
+                Text("@ \(formatPrice(transaction.pricePerShare))")
+                    .font(.caption.weight(.semibold))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(16)
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 1)
     }
     
     private func formatShares(_ quantity: Decimal) -> String {
