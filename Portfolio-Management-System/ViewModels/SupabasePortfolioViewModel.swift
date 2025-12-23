@@ -58,8 +58,8 @@ class SupabasePortfolioViewModel: ObservableObject {
     @Published var currencyRatesToUSD: [String: Decimal] = [:]
     
     // Sorting state
-    @Published var sortOption: HoldingSortOption = .marketValue
-    @Published var sortDirection: SortDirection = .descending
+    @Published var sortOption: HoldingSortOption = .ticker
+    @Published var sortDirection: SortDirection = .ascending
     
     @Published var isLoading = false
     @Published var isRefreshing = false

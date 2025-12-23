@@ -392,57 +392,129 @@ struct ExpandablePositionRow: View {
     private var totalGainPercent: Decimal {
         viewModel.totalGainPercent(for: position)
     }
+
+    private var daysGainValue: Decimal {
+        viewModel.daysGainUSD(for: position)
+    }
+
+    private var totalGainValue: Decimal {
+        viewModel.totalGainUSD(for: position)
+    }
     
     private var marketValue: Decimal {
         viewModel.marketValueUSD(for: position)
+    }
+    
+    private var currentPrice: Decimal {
+        viewModel.latestPrices[position.symbol] ?? 0
+    }
+    
+    private var stockName: String? {
+        viewModel.getStockName(for: position.symbol)
+    }
+    
+    private var isMarketValueSort: Bool {
+        viewModel.sortOption == .marketValue
+    }
+
+    private var isDaysGainSort: Bool {
+        viewModel.sortOption == .daysGain || viewModel.sortOption == .daysGainPercent
+    }
+
+    private var isTotalGainSort: Bool {
+        viewModel.sortOption == .totalGain || viewModel.sortOption == .totalGainPercent
     }
     
     var body: some View {
         VStack(spacing: 0) {
             // Main Row (always visible)
             Button(action: onToggle) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(position.symbol)
+                if isMarketValueSort {
+                    // Market value sort view: price on left, market value on right with total gain % below
+                    HStack {
+                        // Left: Current price and percentage change
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(position.symbol)
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                
+                                Text("Open")
+                                    .font(.caption2.weight(.medium))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.blue)
+                                    .foregroundStyle(.white)
+                                    .cornerRadius(10)
+                            }
+                            
+                            if currentPrice > 0 {
+                                Text(formatPrice(currentPrice))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Text(formatPercent(daysGainPercent))
+                                    .font(.caption)
+                                    .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
+                            }
+                        }
+                        
+                        Spacer()
+                        
+                        // Right: Market value with total gain % below
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(formatNumber(marketValue))
                                 .font(.headline)
                                 .foregroundStyle(.primary)
-                            
-                            Text("Open")
-                                .font(.caption2.weight(.medium))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.blue)
-                                .foregroundStyle(.white)
-                                .cornerRadius(10)
-                        }
-                        
-                        HStack(spacing: 4) {
-                            Text(formatPercent(daysGainPercent) + " Today")
-                                .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
-                            Text("•")
-                                .foregroundStyle(.secondary)
                             Text(formatPercent(totalGainPercent) + " Total")
+                                .font(.caption2)
                                 .foregroundStyle(totalGainPercent >= 0 ? .green : .red)
+                            
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 2)
                         }
-                        .font(.caption)
                     }
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 8) {
-                        Text(formatNumber(marketValue))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                } else {
+                    // Default view: ticker, name, price, percentage change (no chart)
+                    HStack {
+                        defaultLeftContent
                         
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Spacer()
+
+                        if isDaysGainSort {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(formatSignedValue(daysGainValue, percent: nil))
+                                    .font(.headline)
+                                    .foregroundStyle(daysGainValue >= 0 ? .green : .red)
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 2)
+                            }
+                        } else if isTotalGainSort {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(formatSignedValue(totalGainValue, percent: totalGainPercent))
+                                    .font(.headline)
+                                    .foregroundStyle(totalGainValue >= 0 ? .green : .red)
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 2)
+                            }
+                        } else {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             
@@ -526,6 +598,16 @@ struct ExpandablePositionRow: View {
         .font(.subheadline)
     }
     
+    private func formatPrice(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 3
+        formatter.minimumFractionDigits = 2
+        formatter.usesGroupingSeparator = false
+        return formatter.string(from: number) ?? "0.00"
+    }
+    
     private func formatPercent(_ value: Decimal) -> String {
         let number = NSDecimalNumber(decimal: value)
         let formatter = NumberFormatter()
@@ -581,6 +663,34 @@ struct ExpandablePositionRow: View {
             return "\(valueStr) (\(pctStr)%)"
         }
         return valueStr
+    }
+
+    private var defaultLeftContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(position.symbol)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+            }
+            
+            if let name = stockName {
+                Text(name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            
+            if currentPrice > 0 {
+                HStack(spacing: 8) {
+                    Text(formatPrice(currentPrice))
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                    Text(formatPercent(daysGainPercent))
+                        .font(.caption)
+                        .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
+                }
+            }
+        }
     }
 }
 
