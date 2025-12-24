@@ -310,38 +310,38 @@ struct HoldingSortSheet: View {
                 .font(.title2.bold())
                 .padding(.top, 8)
             
-            VStack(spacing: 8) {
-                ForEach(HoldingSortOption.allCases, id: \.self) { option in
-                    Button {
-                        if tempOption == option {
-                            tempDirection.toggle()
-                        } else {
-                            tempOption = option
-                            tempDirection = option == .ticker ? .ascending : .descending
-                        }
-                    } label: {
-                        HStack {
-                            Text(option.rawValue)
-                                .foregroundStyle(tempOption == option ? .white : .primary)
-                            Spacer()
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(HoldingSortOption.allCases, id: \.self) { option in
+                        Button {
                             if tempOption == option {
-                                HStack(spacing: 4) {
-                                    Text(tempDirection.rawValue)
-                                    Image(systemName: tempDirection.icon)
-                                }
-                                .font(.subheadline)
-                                .foregroundStyle(.white)
+                                tempDirection.toggle()
+                            } else {
+                                tempOption = option
+                                tempDirection = option == .ticker ? .ascending : .descending
                             }
+                        } label: {
+                            HStack {
+                                Text(option.rawValue)
+                                    .foregroundStyle(tempOption == option ? .white : .primary)
+                                Spacer()
+                                if tempOption == option {
+                                    HStack(spacing: 4) {
+                                        Text(tempDirection.rawValue)
+                                        Image(systemName: tempDirection.icon)
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(tempOption == option ? Color.blue : Color(.systemGray5))
+                            .cornerRadius(12)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(tempOption == option ? Color.blue : Color(.systemGray5))
-                        .cornerRadius(12)
                     }
                 }
             }
-            
-            Spacer()
             
             VStack(spacing: 12) {
                 Button {

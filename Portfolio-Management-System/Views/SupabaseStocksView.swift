@@ -7,6 +7,14 @@
 
 import SwiftUI
 
+// MARK: - Stock Sort Options for Market Overview
+
+enum StockSortOption: String, CaseIterable {
+    case ticker = "Ticker"
+    case exchange = "Exchanges"
+    case dailyPercent = "Daily %"
+}
+
 struct SupabaseStocksView: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
     @State private var selectedTab = 0
@@ -15,6 +23,9 @@ struct SupabaseStocksView: View {
     @State private var isUpdatingPrices = false
     @State private var showingEditSheet = false
     @State private var stockSearchText = ""
+    @State private var showSortSheet = false
+    @State private var stockSortOption: StockSortOption = .ticker
+    @State private var stockSortDirection: SortDirection = .ascending
 
     private var filteredStocks: [SupabaseStock] {
         let trimmed = stockSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -45,7 +56,10 @@ struct SupabaseStocksView: View {
                         viewModel: viewModel,
                         stocks: filteredStocks,
                         selectedStock: $selectedStock,
-                        isUpdatingPrices: $isUpdatingPrices
+                        isUpdatingPrices: $isUpdatingPrices,
+                        showSortSheet: $showSortSheet,
+                        sortOption: $stockSortOption,
+                        sortDirection: $stockSortDirection
                     )
                 } else {
                     ManageStocksTab(
@@ -119,6 +133,40 @@ struct MarketOverviewTab: View {
     let stocks: [SupabaseStock]
     @Binding var selectedStock: SupabaseStock?
     @Binding var isUpdatingPrices: Bool
+    @Binding var showSortSheet: Bool
+    @Binding var sortOption: StockSortOption
+    @Binding var sortDirection: SortDirection
+    
+    private var sortedStocks: [SupabaseStock] {
+        let sorted = stocks.sorted { stock1, stock2 in
+            let comparison: Bool
+            switch sortOption {
+            case .ticker:
+                comparison = stock1.symbol < stock2.symbol
+            case .exchange:
+                let market1 = stock1.market?.uppercased() ?? "ZZZ"
+                let market2 = stock2.market?.uppercased() ?? "ZZZ"
+                if market1 == market2 {
+                    comparison = stock1.symbol < stock2.symbol
+                } else {
+                    comparison = market1 < market2
+                }
+            case .dailyPercent:
+                let percent1 = dailyChangePercent(for: stock1)
+                let percent2 = dailyChangePercent(for: stock2)
+                comparison = percent1 > percent2
+            }
+            return sortDirection == .descending ? comparison : !comparison
+        }
+        return sorted
+    }
+    
+    private func dailyChangePercent(for stock: SupabaseStock) -> Decimal {
+        let currentPrice = viewModel.latestPrices[stock.symbol] ?? 0
+        let previousPrice = viewModel.previousClosePrices[stock.symbol] ?? currentPrice
+        guard previousPrice != 0 else { return 0 }
+        return (currentPrice - previousPrice) / previousPrice * 100
+    }
     
     var body: some View {
         if viewModel.stocks.isEmpty {
@@ -126,20 +174,59 @@ struct MarketOverviewTab: View {
         } else if stocks.isEmpty {
             EmptyStockSearchView()
         } else {
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    ForEach(stocks) { stock in
-                        StockCardView(
-                            stock: stock,
-                            price: viewModel.latestPrices[stock.symbol],
-                            isSelected: selectedStock?.id == stock.id
-                        )
-                        .onTapGesture {
-                            selectedStock = stock
+            VStack(spacing: 0) {
+                // Sort Header
+                HStack {
+                    Text("Sort by")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    
+                    Button {
+                        showSortSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(sortOption.rawValue)
+                                .font(.subheadline.weight(.medium))
+                            Image(systemName: sortDirection.icon)
+                                .font(.caption)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.blue)
+                        .foregroundStyle(.white)
+                        .cornerRadius(16)
+                    }
+                    
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(sortedStocks) { stock in
+                            StockCardView(
+                                stock: stock,
+                                price: viewModel.latestPrices[stock.symbol],
+                                previousClosePrice: viewModel.previousClosePrices[stock.symbol],
+                                isSelected: selectedStock?.id == stock.id
+                            )
+                            .onTapGesture {
+                                selectedStock = stock
+                            }
                         }
                     }
+                    .padding()
                 }
-                .padding()
+            }
+            .sheet(isPresented: $showSortSheet) {
+                StockSortSheet(
+                    selectedOption: $sortOption,
+                    sortDirection: $sortDirection,
+                    isPresented: $showSortSheet
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
     }
@@ -229,6 +316,7 @@ struct EmptyStockSearchView: View {
 struct StockCardView: View {
     let stock: SupabaseStock
     let price: Decimal?
+    let previousClosePrice: Decimal?
     var isSelected: Bool = false
     
     private var currency: String {
@@ -246,6 +334,13 @@ struct StockCardView: View {
         case "CNY": return "¥"
         default: return "$"
         }
+    }
+    
+    private var dailyChangePercent: Decimal? {
+        guard let currentPrice = price,
+              let prevClose = previousClosePrice,
+              prevClose != 0 else { return nil }
+        return (currentPrice - prevClose) / prevClose * 100
     }
     
     var body: some View {
@@ -272,6 +367,14 @@ struct StockCardView: View {
                         Text("--")
                             .font(.title3)
                             .foregroundStyle(.secondary)
+                    }
+                    
+                    // Daily percentage change - displayed prominently below price
+                    if let percent = dailyChangePercent {
+                        Text(formatPercent(percent))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(percent >= 0 ? .green : .red)
                     }
                     
                     HStack(spacing: 4) {
@@ -316,6 +419,107 @@ struct StockCardView: View {
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
         return formatter.string(from: number) ?? "\(value)"
+    }
+    
+    private func formatPercent(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.positivePrefix = "+"
+        return "\(formatter.string(from: number) ?? "0.00")%"
+    }
+}
+
+// MARK: - Stock Sort Sheet
+
+struct StockSortSheet: View {
+    @Binding var selectedOption: StockSortOption
+    @Binding var sortDirection: SortDirection
+    @Binding var isPresented: Bool
+    
+    @State private var tempOption: StockSortOption
+    @State private var tempDirection: SortDirection
+    
+    init(selectedOption: Binding<StockSortOption>, sortDirection: Binding<SortDirection>, isPresented: Binding<Bool>) {
+        self._selectedOption = selectedOption
+        self._sortDirection = sortDirection
+        self._isPresented = isPresented
+        self._tempOption = State(initialValue: selectedOption.wrappedValue)
+        self._tempDirection = State(initialValue: sortDirection.wrappedValue)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Sort by")
+                .font(.title2.bold())
+                .padding(.top, 8)
+            
+            ScrollView {
+                VStack(spacing: 8) {
+                    ForEach(StockSortOption.allCases, id: \.self) { option in
+                        Button {
+                            if tempOption == option {
+                                tempDirection.toggle()
+                            } else {
+                                tempOption = option
+                                tempDirection = option == .ticker ? .ascending : .descending
+                            }
+                        } label: {
+                            HStack {
+                                Text(option.rawValue)
+                                    .foregroundStyle(tempOption == option ? .white : .primary)
+                                Spacer()
+                                if tempOption == option {
+                                    HStack(spacing: 4) {
+                                        Text(tempDirection.rawValue)
+                                        Image(systemName: tempDirection.icon)
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .background(tempOption == option ? Color.blue : Color(.systemGray5))
+                            .cornerRadius(12)
+                        }
+                    }
+                }
+            }
+            
+            VStack(spacing: 12) {
+                Button {
+                    selectedOption = tempOption
+                    sortDirection = tempDirection
+                    isPresented = false
+                } label: {
+                    Text("Apply")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color(.systemBackground))
+                        .foregroundStyle(.primary)
+                        .cornerRadius(24)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color(.systemGray4), lineWidth: 1)
+                        )
+                }
+                
+                Button {
+                    isPresented = false
+                } label: {
+                    Text("Cancel")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .padding(.bottom, 16)
+        }
+        .padding(.horizontal, 24)
+        .background(Color(.systemBackground))
     }
 }
 
