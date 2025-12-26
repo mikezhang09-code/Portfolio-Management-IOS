@@ -352,7 +352,7 @@ struct SupabaseTransactionDetailRow: View {
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 6) {
-                    Text(formatTotal(transaction.quantity * transaction.pricePerShare))
+                    Text(formatTotal(transaction.quantity * transaction.pricePerShare, currency: transaction.currency))
                         .font(.subheadline.weight(.semibold))
                     Text(formatShares(transaction.quantity))
                         .font(.caption)
@@ -367,7 +367,7 @@ struct SupabaseTransactionDetailRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("@ \(formatPrice(transaction.pricePerShare))")
+                Text("@ \(formatPrice(transaction.pricePerShare, currency: transaction.currency))")
                     .font(.caption.weight(.semibold))
             }
         }
@@ -386,20 +386,20 @@ struct SupabaseTransactionDetailRow: View {
         return (formatter.string(from: number) ?? "0") + " shares"
     }
     
-    private func formatPrice(_ price: Decimal) -> String {
+    private func formatPrice(_ price: Decimal, currency: String) -> String {
         let number = NSDecimalNumber(decimal: price)
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
-        formatter.currencySymbol = "$"
+        formatter.currencyCode = currency.uppercased()
         formatter.maximumFractionDigits = 2
         return formatter.string(from: number) ?? "$0.00"
     }
-    
-    private func formatTotal(_ total: Decimal) -> String {
+
+    private func formatTotal(_ total: Decimal, currency: String) -> String {
         let number = NSDecimalNumber(decimal: total)
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
-        formatter.currencySymbol = "$"
+        formatter.currencyCode = currency.uppercased()
         formatter.maximumFractionDigits = 2
         return formatter.string(from: number) ?? "$0.00"
     }
