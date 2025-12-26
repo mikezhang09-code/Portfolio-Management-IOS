@@ -10,6 +10,7 @@ import SwiftUI
 struct AddSupabaseTransactionView: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
     @Binding var isPresented: Bool
+    var preselectedSymbol: String? = nil
 
     enum TransactionEntryType: String, CaseIterable, Identifiable {
         case stockBuy = "Stock Buy"
@@ -340,7 +341,12 @@ struct AddSupabaseTransactionView: View {
             selectedCashAccountId = sortedAccounts.first?.id
         }
         if requiresStockSelection && selectedStockId == nil {
-            selectedStockId = sortedStocks.first?.id
+            if let symbol = preselectedSymbol,
+               let match = sortedStocks.first(where: { $0.symbol == symbol }) {
+                selectedStockId = match.id
+            } else {
+                selectedStockId = sortedStocks.first?.id
+            }
         }
         if isFxTransfer {
             ensureTargetAccount()

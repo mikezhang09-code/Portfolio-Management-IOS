@@ -384,6 +384,8 @@ struct ExpandablePositionRow: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
     let isExpanded: Bool
     let onToggle: () -> Void
+
+    @State private var activeSheet: ActiveSheet?
     
     private var daysGainPercent: Decimal {
         viewModel.daysGainPercent(for: position)
@@ -527,14 +529,13 @@ struct ExpandablePositionRow: View {
                         detailRow("Total cost", value: formatNumber(position.totalCostBase))
                         
                         Divider()
-                        
+
                         detailRow("Day's gain", value: formatSignedValue(viewModel.daysGainUSD(for: position), percent: daysGainPercent), valueColor: viewModel.daysGainUSD(for: position) >= 0 ? .green : .red)
                         detailRow("Total gain", value: formatSignedValue(viewModel.totalGainUSD(for: position), percent: totalGainPercent), valueColor: viewModel.totalGainUSD(for: position) >= 0 ? .green : .red)
-                        detailRow("Realised gain", value: formatSignedValue(viewModel.realisedGain(for: position.symbol), percent: nil), valueColor: viewModel.realisedGain(for: position.symbol) >= 0 ? .green : .red)
                         detailRow("Market value", value: formatNumber(marketValue))
-                        
+
                         Divider()
-                        
+
                         // Shares row with navigation
                         HStack {
                             Text("Shares")
@@ -548,23 +549,28 @@ struct ExpandablePositionRow: View {
                             .foregroundStyle(.primary)
                         }
                         .font(.subheadline)
-                        
+
                         // Transactions row with navigation
-                        HStack {
-                            Text("Transactions")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Text("\(viewModel.transactionCount(for: position.symbol)) total")
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
+                        Button {
+                            activeSheet = .transactions
+                        } label: {
+                            HStack {
+                                Text("Transactions")
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                HStack(spacing: 4) {
+                                    Text("\(viewModel.transactionCount(for: position.symbol)) total")
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(.primary)
                             }
-                            .foregroundStyle(.primary)
+                            .font(.subheadline)
                         }
-                        .font(.subheadline)
-                        
+                        .buttonStyle(.plain)
+
                         Divider()
-                        
+
                         // Total dividend income
                         detailRow("Total dividend income", value: formatNumber(viewModel.dividendIncome(for: position.symbol)))
                     }
@@ -582,7 +588,34 @@ struct ExpandablePositionRow: View {
                     .foregroundStyle(.blue)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        activeSheet = .addTransaction
+                    }
                 }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .transactions:
+                StockTransactionsSheet(
+                    viewModel: viewModel,
+                    symbol: position.symbol,
+                    stockName: stockName
+                )
+            case .addTransaction:
+                AddSupabaseTransactionView(
+                    viewModel: viewModel,
+                    isPresented: Binding(
+                        get: { activeSheet == .addTransaction },
+                        set: { newValue in
+                            if !newValue {
+                                activeSheet = nil
+                            }
+                        }
+                    ),
+                    preselectedSymbol: position.symbol
+                )
             }
         }
     }
@@ -688,6 +721,79 @@ struct ExpandablePositionRow: View {
                     Text(formatPercent(daysGainPercent))
                         .font(.caption)
                         .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
+                }
+            }
+        }
+    }
+}
+
+private enum ActiveSheet: Identifiable {
+    case transactions
+    case addTransaction
+
+    var id: Int { hashValue }
+}
+
+private struct StockTransactionsSheet: View {
+    @ObservedObject var viewModel: SupabasePortfolioViewModel
+    let symbol: String
+    let stockName: String?
+    @Environment(\.dismiss) private var dismiss
+
+    private var filteredTransactions: [SupabaseStockTransaction] {
+        viewModel.stockTransactions
+            .filter { $0.symbol == symbol }
+            .sorted { $0.tradeDate > $1.tradeDate }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                if viewModel.isLoading {
+                    ProgressView("Loading transactions...")
+                        .frame(maxWidth: .infinity)
+                } else if filteredTransactions.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.secondary)
+                        Text("No transactions yet")
+                            .font(.headline)
+                        Text("Add a transaction to see activity for this stock.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("\(filteredTransactions.count) Transactions")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                ForEach(filteredTransactions) { transaction in
+                                    SupabaseTransactionDetailRow(
+                                        transaction: transaction,
+                                        stockName: viewModel.getStockName(for: transaction.symbol)
+                                    )
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .navigationTitle(stockName ?? symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
                 }
             }
         }
