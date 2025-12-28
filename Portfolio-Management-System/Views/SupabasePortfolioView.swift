@@ -614,7 +614,8 @@ struct ExpandablePositionRow: View {
                             }
                         }
                     ),
-                    preselectedSymbol: position.symbol
+                    preselectedSymbol: position.symbol,
+                    allowedTypes: [.stockBuy, .stockSell, .stockDividend]
                 )
             }
         }
