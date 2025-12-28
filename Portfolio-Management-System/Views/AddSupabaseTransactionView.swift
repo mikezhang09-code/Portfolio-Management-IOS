@@ -11,6 +11,7 @@ struct AddSupabaseTransactionView: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
     @Binding var isPresented: Bool
     var preselectedSymbol: String? = nil
+    var allowedTypes: [TransactionEntryType]? = nil
 
     enum TransactionEntryType: String, CaseIterable, Identifiable {
         case stockBuy = "Stock Buy"
@@ -126,7 +127,7 @@ struct AddSupabaseTransactionView: View {
             Form {
                 Section("Transaction Type") {
                     Picker("Type", selection: $transactionType) {
-                        ForEach(TransactionEntryType.allCases) { type in
+                        ForEach(availableTypes) { type in
                             Text(type.rawValue).tag(type)
                         }
                     }
@@ -253,6 +254,9 @@ struct AddSupabaseTransactionView: View {
                 }
             }
             .onAppear {
+                if let allowed = allowedTypes, !allowed.contains(transactionType), let first = allowed.first {
+                    transactionType = first
+                }
                 ensureDefaultSelections()
             }
             .onChange(of: transactionType) { _, _ in
@@ -268,6 +272,13 @@ struct AddSupabaseTransactionView: View {
                 ensureDefaultSelections()
             }
         }
+    }
+
+    private var availableTypes: [TransactionEntryType] {
+        if let allowed = allowedTypes {
+            return allowed
+        }
+        return TransactionEntryType.allCases
     }
 
     private var summaryRows: [(label: String, value: String)]? {

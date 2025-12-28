@@ -191,7 +191,8 @@ struct SupabaseTransactionsView: View {
         .sheet(isPresented: $showingAddTransaction) {
             AddSupabaseTransactionView(
                 viewModel: viewModel,
-                isPresented: $showingAddTransaction
+                isPresented: $showingAddTransaction,
+                allowedTypes: [.stockBuy, .stockSell, .stockDividend]
             )
         }
         .task {

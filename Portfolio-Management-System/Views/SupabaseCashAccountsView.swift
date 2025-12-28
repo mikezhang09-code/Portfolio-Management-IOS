@@ -9,6 +9,8 @@ import SwiftUI
 
 struct SupabaseCashAccountsView: View {
     @ObservedObject private var viewModel = SupabasePortfolioViewModel.shared
+    @State private var showingAddTransaction = false
+    
     
     var body: some View {
         NavigationStack {
@@ -100,7 +102,15 @@ struct SupabaseCashAccountsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    HStack(spacing: 12) {
+                        Button {
+                            showingAddTransaction = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .disabled(viewModel.isLoading)
+
+                        Button {
                         Task {
                             await viewModel.forceRefresh()
                         }
@@ -110,8 +120,16 @@ struct SupabaseCashAccountsView: View {
                     .disabled(viewModel.isLoading || viewModel.isRefreshing)
                 }
             }
+            }
             .refreshable {
                 await viewModel.forceRefresh()
+            }
+            .sheet(isPresented: $showingAddTransaction) {
+                AddSupabaseTransactionView(
+                    viewModel: viewModel,
+                    isPresented: $showingAddTransaction,
+                    allowedTypes: [.cashDeposit, .cashWithdrawal, .cashInterest, .currencyExchange]
+                )
             }
         }
         .task {
