@@ -618,10 +618,23 @@ class PortfolioDataService {
         // Native balances per account
         struct Key: Hashable { let accountId: UUID; let currency: String; let displayName: String }
         var nativeBalances: [Key: Decimal] = [:]
+
+        for account in accounts {
+            let key = Key(
+                accountId: account.id,
+                currency: account.currency.uppercased().trimmingCharacters(in: .whitespaces),
+                displayName: account.displayName
+            )
+            nativeBalances[key] = 0
+        }
         
         for tx in transactions {
             guard let account = accounts.first(where: { $0.id == tx.cashAccountId }) else { continue }
-            let key = Key(accountId: account.id, currency: account.currency.uppercased().trimmingCharacters(in: .whitespaces), displayName: account.displayName)
+            let key = Key(
+                accountId: account.id,
+                currency: account.currency.uppercased().trimmingCharacters(in: .whitespaces),
+                displayName: account.displayName
+            )
             
             // Apply direction: inflow = +amount, outflow = -amount
             let isInflow = tx.direction.lowercased() == "inflow"

@@ -10,6 +10,7 @@ import SwiftUI
 struct SupabaseCashAccountsView: View {
     @ObservedObject private var viewModel = SupabasePortfolioViewModel.shared
     @State private var showingAddTransaction = false
+    @State private var showingAddAccount = false
     
     
     var body: some View {
@@ -61,26 +62,32 @@ struct SupabaseCashAccountsView: View {
                         .padding(.horizontal, 16)
                         
                         // Cash Accounts List
-                        if !viewModel.accountUSDValues.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Text("Cash Accounts")
-                                        .font(.headline)
-                                    Text("(\(viewModel.accountUSDValues.count))")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    if viewModel.isRefreshing {
-                                        ProgressView()
-                                            .scaleEffect(0.7)
-                                    }
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("Cash Accounts")
+                                    .font(.headline)
+                                Text("(\(viewModel.accountUSDValues.count))")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if viewModel.isRefreshing {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+
+                            if viewModel.accountUSDValues.isEmpty {
+                                ContentUnavailableView("No cash accounts yet", systemImage: "banknote") {
+                                    Text("Add a cash account to start tracking balances.")
                                 }
                                 .padding(.horizontal, 16)
-                                
+                            } else {
+                                let sortedAccounts = viewModel.accountUSDValues.sorted { $0.displayName < $1.displayName }
                                 VStack(spacing: 0) {
-                                    ForEach(viewModel.accountUSDValues.sorted { $0.displayName < $1.displayName }) { account in
+                                    ForEach(sortedAccounts) { account in
                                         CashAccountDetailRow(account: account)
-                                        if account.id != viewModel.accountUSDValues.sorted(by: { $0.displayName < $1.displayName }).last?.id {
+                                        if account.id != sortedAccounts.last?.id {
                                             Divider()
                                                 .padding(.horizontal, 12)
                                         }
@@ -103,21 +110,27 @@ struct SupabaseCashAccountsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
-                        Button {
-                            showingAddTransaction = true
+                        Menu {
+                            Button("Add Cash Account", systemImage: "banknote") {
+                                showingAddAccount = true
+                            }
+                            Button("Add Transaction", systemImage: "plus") {
+                                showingAddTransaction = true
+                            }
                         } label: {
                             Image(systemName: "plus")
                         }
                         .disabled(viewModel.isLoading)
 
                         Button {
-                        Task {
-                            await viewModel.forceRefresh()
+                            Task {
+                                await viewModel.forceRefresh()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
                         }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                        .disabled(viewModel.isLoading || viewModel.isRefreshing)
                     }
-                    .disabled(viewModel.isLoading || viewModel.isRefreshing)
                 }
             }
             }
@@ -130,6 +143,9 @@ struct SupabaseCashAccountsView: View {
                     isPresented: $showingAddTransaction,
                     allowedTypes: [.cashDeposit, .cashWithdrawal, .cashInterest, .currencyExchange]
                 )
+            }
+            .sheet(isPresented: $showingAddAccount) {
+                AddCashAccountView(viewModel: viewModel, isPresented: $showingAddAccount)
             }
         }
         .task {

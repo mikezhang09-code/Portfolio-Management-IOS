@@ -673,6 +673,38 @@ class SupabasePortfolioViewModel: ObservableObject {
         cacheService.cacheStockTransactions(stockTransactions)
         return transaction
     }
+
+    // MARK: - Cash Account Management
+
+    func addCashAccount(currency: String, displayName: String) async throws {
+        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCurrency = currency.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let account = try await dataService.createCashAccount(
+            currency: normalizedCurrency,
+            displayName: trimmedName
+        )
+
+        cashAccounts.append(account)
+        cashAccounts.sort { $0.displayName < $1.displayName }
+
+        let exchangeRate = currencyRatesToUSD[normalizedCurrency] ?? 1
+        let newAccountValue = PortfolioDataService.AccountUSDValue(
+            id: account.id,
+            displayName: account.displayName,
+            nativeCurrency: normalizedCurrency,
+            nativeBalance: 0,
+            exchangeRate: exchangeRate,
+            usdValue: 0
+        )
+        accountUSDValues.append(newAccountValue)
+        accountUSDValues.sort { $0.displayName < $1.displayName }
+
+        cashBalancesNative[account.id] = 0
+        cashBalancesBase[account.id] = 0
+
+        cacheService.cacheCashAccounts(cashAccounts)
+        cacheService.cacheAccountUSDValues(accountUSDValues.map { CachedAccountUSDValue(from: $0) })
+    }
     
     // MARK: - Stock Management
 
