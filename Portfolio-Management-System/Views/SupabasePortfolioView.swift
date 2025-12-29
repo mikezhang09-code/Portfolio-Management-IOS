@@ -20,186 +20,11 @@ struct SupabasePortfolioView: View {
                         ProgressView("Loading portfolio...")
                             .padding()
                     } else if let error = viewModel.errorMessage {
-                        VStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.largeTitle)
-                                .foregroundStyle(.orange)
-                            Text("Error Loading Portfolio")
-                                .font(.headline)
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                            Button("Retry") {
-                                Task {
-                                    await viewModel.loadPortfolioData()
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .padding()
+                        errorView(error)
+                    } else if viewModel.positions.isEmpty && viewModel.totalCashBalance == 0 {
+                        PortfolioEmptyStateView()
                     } else {
-                        // Portfolio Summary Card
-                        VStack(spacing: 16) {
-                            // Header with USD note
-                            HStack {
-                                Text("Portfolio Summary")
-                                    .font(.headline)
-                                Spacer()
-                                Text("All values in USD")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            // Total Portfolio Value - Hero section
-                            VStack(spacing: 4) {
-                                Text("Total Value")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(formatUSD(viewModel.totalPortfolioValue))
-                                    .font(.system(size: 34, weight: .bold))
-                                    .foregroundStyle(.primary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            
-                            Divider()
-                            
-                            // Cash & Holdings row
-                            HStack(spacing: 0) {
-                                VStack(spacing: 4) {
-                                    Text("Cash")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(formatUSD(viewModel.totalCashBalance))
-                                        .font(.title3.bold())
-                                        .foregroundStyle(.blue)
-                                }
-                                .frame(maxWidth: .infinity)
-                                
-                                Divider()
-                                    .frame(height: 40)
-                                
-                                VStack(spacing: 4) {
-                                    Text("Stocks")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(formatUSD(viewModel.totalHoldingsValue))
-                                        .font(.title3.bold())
-                                        .foregroundStyle(.green)
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                            
-                            Divider()
-                            
-                            // Today's Change & Gain/Loss row
-                            HStack(spacing: 0) {
-                                VStack(spacing: 4) {
-                                    Text("Today's Change")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(formatSignedUSD(viewModel.todayChangeValue))
-                                        .font(.title3.bold())
-                                        .foregroundStyle(viewModel.todayChangeValue >= 0 ? .green : .red)
-                                }
-                                .frame(maxWidth: .infinity)
-                                
-                                Divider()
-                                    .frame(height: 40)
-                                
-                                VStack(spacing: 4) {
-                                    Text("Stock Gain/Loss")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text(formatSignedUSD(viewModel.gainLossValue))
-                                        .font(.title3.bold())
-                                        .foregroundStyle(viewModel.gainLossValue >= 0 ? .green : .red)
-                                }
-                                .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(20)
-                        .background(Color(.systemBackground))
-                        .cornerRadius(16)
-                        .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
-                        .padding(.horizontal, 16)
-                        
-                        // Holdings Section
-                        if !viewModel.positions.isEmpty {
-                            VStack(alignment: .leading, spacing: 12) {
-                                // Holdings Header with Sort Button
-                                HStack {
-                                    Text("All")
-                                        .font(.subheadline)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(Color(.systemGray5))
-                                        .cornerRadius(16)
-                                    
-                                    Spacer()
-                                    
-                                    Text("Sort by")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                    
-                                    Button {
-                                        showSortSheet = true
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Text(viewModel.sortOption.rawValue)
-                                                .font(.subheadline.weight(.medium))
-                                            Image(systemName: viewModel.sortDirection.icon)
-                                                .font(.caption)
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .background(Color.blue)
-                                        .foregroundStyle(.white)
-                                        .cornerRadius(16)
-                                    }
-                                    
-                                    if viewModel.isRefreshing {
-                                        ProgressView()
-                                            .scaleEffect(0.7)
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                
-                                // Holdings List
-                                VStack(spacing: 0) {
-                                    ForEach(viewModel.sortedPositions) { position in
-                                        ExpandablePositionRow(
-                                            position: position,
-                                            viewModel: viewModel,
-                                            isExpanded: expandedPositionId == position.id,
-                                            onToggle: {
-                                                withAnimation(.easeInOut(duration: 0.2)) {
-                                                    if expandedPositionId == position.id {
-                                                        expandedPositionId = nil
-                                                    } else {
-                                                        expandedPositionId = position.id
-                                                    }
-                                                }
-                                            }
-                                        )
-                                        
-                                        if position.id != viewModel.sortedPositions.last?.id {
-                                            Divider()
-                                                .padding(.horizontal, 16)
-                                        }
-                                    }
-                                }
-                                .padding(.vertical, 8)
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                                .padding(.horizontal, 16)
-                            }
-                        }
-                        
-                        Spacer()
-                            .frame(height: 20)
+                        portfolioContent
                     }
                 }
             }
@@ -207,14 +32,7 @@ struct SupabasePortfolioView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task {
-                            await viewModel.forceRefresh()
-                        }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(viewModel.isLoading || viewModel.isRefreshing)
+                    refreshButton
                 }
             }
             .refreshable {
@@ -234,30 +52,245 @@ struct SupabasePortfolioView: View {
             await viewModel.loadPortfolioData()
         }
     }
+    
+    // MARK: - Subviews
+    
+    private var portfolioContent: some View {
+        VStack(spacing: 16) {
+            // Portfolio Summary Card
+            VStack(spacing: 16) {
+                summaryHeader
+                totalValueSection
+                Divider()
+                cashStocksRow
+                Divider()
+                performanceRow
+            }
+            .frame(maxWidth: .infinity)
+            .padding(20)
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+            .padding(.horizontal, 16)
+            
+            // Holdings Section
+            if !viewModel.positions.isEmpty {
+                holdingsSection
+            } else if !viewModel.cashAccounts.isEmpty {
+                // If no stock positions but has cash, show cash accounts
+                cashAccountsSection
+            }
+            
+            Spacer().frame(height: 20)
+        }
+    }
+    
+    private var summaryHeader: some View {
+        HStack {
+            Text("Portfolio Summary")
+                .font(.headline)
+            Spacer()
+            Text("All values in USD")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+    
+    private var totalValueSection: some View {
+        VStack(spacing: 4) {
+            Text("Total Value")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(PortfolioFormatter.formatUSD(viewModel.totalPortfolioValue))
+                .font(.system(size: 34, weight: .bold))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+    }
+    
+    private var cashStocksRow: some View {
+        HStack(spacing: 0) {
+            summaryDetailBlock(label: "Cash", value: viewModel.totalCashBalance, color: .blue)
+            Divider().frame(height: 40)
+            summaryDetailBlock(label: "Stocks", value: viewModel.totalHoldingsValue, color: .green)
+        }
+    }
+    
+    private var performanceRow: some View {
+        HStack(spacing: 0) {
+            summaryDetailBlock(label: "Today's Change", value: viewModel.todayChangeValue, color: viewModel.todayChangeValue >= 0 ? .green : .red, isSigned: true)
+            Divider().frame(height: 40)
+            summaryDetailBlock(label: "Stock Gain/Loss", value: viewModel.gainLossValue, color: viewModel.gainLossValue >= 0 ? .green : .red, isSigned: true)
+        }
+    }
+    
+    private func summaryDetailBlock(label: String, value: Decimal, color: Color, isSigned: Bool = false) -> some View {
+        VStack(spacing: 4) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(isSigned ? PortfolioFormatter.formatSignedUSD(value) : PortfolioFormatter.formatUSD(value))
+                .font(.title3.bold())
+                .foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    private var holdingsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("All")
+                    .font(.subheadline)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(.systemGray5))
+                    .cornerRadius(16)
+                
+                Spacer()
+                
+                sortButton
+                
+                if viewModel.isRefreshing {
+                    ProgressView().scaleEffect(0.7)
+                }
+            }
+            .padding(.horizontal, 16)
+            
+            // Holdings List
+            VStack(spacing: 0) {
+                ForEach(viewModel.sortedPositions) { position in
+                    ExpandablePositionRow(
+                        position: position,
+                        viewModel: viewModel,
+                        isExpanded: expandedPositionId == position.id,
+                        onToggle: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                if expandedPositionId == position.id {
+                                    expandedPositionId = nil
+                                } else {
+                                    expandedPositionId = position.id
+                                }
+                            }
+                        }
+                    )
+                    
+                    if position.id != viewModel.sortedPositions.last?.id {
+                        Divider().padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .padding(.horizontal, 16)
+        }
+    }
+    
+    private var cashAccountsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Cash Accounts")
+                .font(.headline)
+                .padding(.horizontal, 16)
+            
+            VStack(spacing: 0) {
+                ForEach(viewModel.cashAccounts) { account in
+                    CashAccountRow(
+                        account: account,
+                        balance: viewModel.cashBalancesNative[account.id] ?? 0
+                    )
+                    .padding(.horizontal, 16)
+                    
+                    if account.id != viewModel.cashAccounts.last?.id {
+                        Divider().padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .padding(.horizontal, 16)
+        }
+    }
+    
+    private var sortButton: some View {
+        Button {
+            showSortSheet = true
+        } label: {
+            HStack(spacing: 4) {
+                Text(viewModel.sortOption.rawValue)
+                    .font(.subheadline.weight(.medium))
+                Image(systemName: viewModel.sortDirection.icon)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.blue)
+            .foregroundStyle(.white)
+            .cornerRadius(16)
+        }
+    }
+    
+    private var refreshButton: some View {
+        Button {
+            Task { await viewModel.forceRefresh() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
+        }
+        .disabled(viewModel.isLoading || viewModel.isRefreshing)
+    }
+    
+    private func errorView(_ error: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundStyle(.orange)
+            Text("Error Loading Portfolio")
+                .font(.headline)
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Retry") {
+                Task { await viewModel.loadPortfolioData() }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+    }
 }
 
-// MARK: - Formatting Helpers
+// MARK: - Empty State
 
-private func formatUSD(_ value: Decimal) -> String {
-    let number = NSDecimalNumber(decimal: value)
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .currency
-    formatter.currencySymbol = "$"
-    formatter.maximumFractionDigits = 2
-    formatter.minimumFractionDigits = 2
-    return formatter.string(from: number) ?? "$0.00"
-}
-
-private func formatSignedUSD(_ value: Decimal) -> String {
-    let number = NSDecimalNumber(decimal: value)
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .currency
-    formatter.currencySymbol = "$"
-    formatter.maximumFractionDigits = 2
-    formatter.minimumFractionDigits = 2
-    formatter.positivePrefix = "+$"
-    formatter.negativePrefix = "-$"
-    return formatter.string(from: number) ?? "$0.00"
+struct PortfolioEmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "chart.pie.fill")
+                .font(.system(size: 60))
+                .foregroundStyle(.blue.opacity(0.8))
+            
+            VStack(spacing: 8) {
+                Text("Your Portfolio is Empty")
+                    .font(.title3.bold())
+                Text("Start by adding your first stock transaction or deposit some cash.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+            
+            NavigationLink(destination: Text("Add Transaction View")) { // Placeholder
+                Text("Add Your First Asset")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(Color.blue)
+                    .cornerRadius(24)
+            }
+        }
+        .padding(.vertical, 60)
+    }
 }
 
 // MARK: - Supporting Views
@@ -286,7 +319,7 @@ struct CashAccountRow: View {
     }
 }
 
-// MARK: - Holdings Sort Sheet
+// MARK: - Holdings Sort Sheet (Existing, minimal changes)
 
 struct HoldingSortSheet: View {
     @Binding var selectedOption: HoldingSortOption
@@ -343,37 +376,39 @@ struct HoldingSortSheet: View {
                 }
             }
             
-            VStack(spacing: 12) {
-                Button {
-                    selectedOption = tempOption
-                    sortDirection = tempDirection
-                    isPresented = false
-                } label: {
-                    Text("Apply")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color(.systemBackground))
-                        .foregroundStyle(.primary)
-                        .cornerRadius(24)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24)
-                                .stroke(Color(.systemGray4), lineWidth: 1)
-                        )
-                }
-                
-                Button {
-                    isPresented = false
-                } label: {
-                    Text("Cancel")
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                }
-            }
-            .padding(.bottom, 16)
+            applyCancelButtons
         }
         .padding(.horizontal, 24)
         .background(Color(.systemBackground))
+    }
+    
+    private var applyCancelButtons: some View {
+        VStack(spacing: 12) {
+            Button {
+                selectedOption = tempOption
+                sortDirection = tempDirection
+                isPresented = false
+            } label: {
+                Text("Apply")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color(.systemBackground))
+                    .foregroundStyle(.primary)
+                    .cornerRadius(24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(Color(.systemGray4), lineWidth: 1)
+                    )
+            }
+            
+            Button { isPresented = false } label: {
+                Text("Cancel")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding(.bottom, 16)
     }
 }
 
@@ -387,212 +422,39 @@ struct ExpandablePositionRow: View {
 
     @State private var activeSheet: ActiveSheet?
     
-    private var daysGainPercent: Decimal {
-        viewModel.daysGainPercent(for: position)
-    }
-    
-    private var totalGainPercent: Decimal {
-        viewModel.totalGainPercent(for: position)
-    }
-
-    private var daysGainValue: Decimal {
-        viewModel.daysGainUSD(for: position)
-    }
-
-    private var totalGainValue: Decimal {
-        viewModel.totalGainUSD(for: position)
-    }
-    
-    private var marketValue: Decimal {
-        viewModel.marketValueUSD(for: position)
-    }
-    
-    private var currentPrice: Decimal {
-        viewModel.latestPrices[position.symbol] ?? 0
-    }
-    
-    private var stockName: String? {
-        viewModel.getStockName(for: position.symbol)
-    }
-    
-    private var isMarketValueSort: Bool {
-        viewModel.sortOption == .marketValue
-    }
-
-    private var isDaysGainSort: Bool {
-        viewModel.sortOption == .daysGain || viewModel.sortOption == .daysGainPercent
-    }
-
-    private var isTotalGainSort: Bool {
-        viewModel.sortOption == .totalGain || viewModel.sortOption == .totalGainPercent
+    // Performance optimization: compute these once and pass into sub-views
+    private var summaryData: PositionSummaryData {
+        PositionSummaryData(
+            symbol: position.symbol,
+            name: viewModel.getStockName(for: position.symbol),
+            currentPrice: viewModel.latestPrices[position.symbol] ?? 0,
+            daysGainPercent: viewModel.daysGainPercent(for: position),
+            marketValue: viewModel.marketValueUSD(for: position),
+            totalGainPercent: viewModel.totalGainPercent(for: position),
+            daysGainValue: viewModel.daysGainUSD(for: position),
+            totalGainValue: viewModel.totalGainUSD(for: position)
+        )
     }
     
     var body: some View {
         VStack(spacing: 0) {
-            // Main Row (always visible)
             Button(action: onToggle) {
-                if isMarketValueSort {
-                    // Market value sort view: price on left, market value on right with total gain % below
-                    HStack {
-                        // Left: Current price and percentage change
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Text(position.symbol)
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                
-                                Text("Open")
-                                    .font(.caption2.weight(.medium))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Color.blue)
-                                    .foregroundStyle(.white)
-                                    .cornerRadius(10)
-                            }
-                            
-                            if currentPrice > 0 {
-                                Text(formatPrice(currentPrice))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.primary)
-                                Text(formatPercent(daysGainPercent))
-                                    .font(.caption)
-                                    .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        // Right: Market value with total gain % below
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(formatNumber(marketValue))
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            Text(formatPercent(totalGainPercent) + " Total")
-                                .font(.caption2)
-                                .foregroundStyle(totalGainPercent >= 0 ? .green : .red)
-                            
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 2)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                } else {
-                    // Default view: ticker, name, price, percentage change (no chart)
-                    HStack {
-                        defaultLeftContent
-                        
-                        Spacer()
-
-                        if isDaysGainSort {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(formatSignedValue(daysGainValue, percent: nil))
-                                    .font(.headline)
-                                    .foregroundStyle(daysGainValue >= 0 ? .green : .red)
-                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        } else if isTotalGainSort {
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(formatSignedValue(totalGainValue, percent: totalGainPercent))
-                                    .font(.headline)
-                                    .foregroundStyle(totalGainValue >= 0 ? .green : .red)
-                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        } else {
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                }
+                PositionSummaryRow(
+                    data: summaryData,
+                    isExpanded: isExpanded,
+                    sortOption: viewModel.sortOption
+                )
             }
             .buttonStyle(.plain)
             
-            // Expanded Details
             if isExpanded {
-                VStack(spacing: 0) {
-                    // Detail rows
-                    VStack(spacing: 12) {
-                        detailRow("Avg. cost / share", value: formatDecimal(viewModel.averageCostPerShareNative(for: position)))
-                        detailRow("Total cost", value: formatNumber(position.totalCostBase))
-                        
-                        Divider()
-
-                        detailRow("Day's gain", value: formatSignedValue(viewModel.daysGainUSD(for: position), percent: daysGainPercent), valueColor: viewModel.daysGainUSD(for: position) >= 0 ? .green : .red)
-                        detailRow("Total gain", value: formatSignedValue(viewModel.totalGainUSD(for: position), percent: totalGainPercent), valueColor: viewModel.totalGainUSD(for: position) >= 0 ? .green : .red)
-                        detailRow("Market value", value: formatNumber(marketValue))
-
-                        Divider()
-
-                        // Shares row with navigation
-                        HStack {
-                            Text("Shares")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Text(formatDecimal(position.totalShares))
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                            }
-                            .foregroundStyle(.primary)
-                        }
-                        .font(.subheadline)
-
-                        // Transactions row with navigation
-                        Button {
-                            activeSheet = .transactions
-                        } label: {
-                            HStack {
-                                Text("Transactions")
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                HStack(spacing: 4) {
-                                    Text("\(viewModel.transactionCount(for: position.symbol)) total")
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption)
-                                }
-                                .foregroundStyle(.primary)
-                            }
-                            .font(.subheadline)
-                        }
-                        .buttonStyle(.plain)
-
-                        Divider()
-
-                        // Total dividend income
-                        detailRow("Total dividend income", value: formatNumber(viewModel.dividendIncome(for: position.symbol)))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color(.systemGray6))
-                    
-                    // Add transaction button
-                    HStack {
-                        Image(systemName: "plus")
-                            .font(.caption)
-                        Text("Add transaction")
-                            .font(.subheadline)
-                    }
-                    .foregroundStyle(.blue)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        activeSheet = .addTransaction
-                    }
-                }
+                PositionDetailView(
+                    position: position,
+                    viewModel: viewModel,
+                    summaryData: summaryData,
+                    onAddTransaction: { activeSheet = .addTransaction },
+                    onShowTransactions: { activeSheet = .transactions }
+                )
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -601,18 +463,14 @@ struct ExpandablePositionRow: View {
                 StockTransactionsSheet(
                     viewModel: viewModel,
                     symbol: position.symbol,
-                    stockName: stockName
+                    stockName: summaryData.name
                 )
             case .addTransaction:
                 AddSupabaseTransactionView(
                     viewModel: viewModel,
                     isPresented: Binding(
                         get: { activeSheet == .addTransaction },
-                        set: { newValue in
-                            if !newValue {
-                                activeSheet = nil
-                            }
-                        }
+                        set: { if !$0 { activeSheet = nil } }
                     ),
                     preselectedSymbol: position.symbol,
                     allowedTypes: [.stockBuy, .stockSell, .stockDividend]
@@ -620,118 +478,171 @@ struct ExpandablePositionRow: View {
             }
         }
     }
+}
+
+// MARK: - Position Sub-components
+
+struct PositionSummaryData {
+    let symbol: String
+    let name: String?
+    let currentPrice: Decimal
+    let daysGainPercent: Decimal
+    let marketValue: Decimal
+    let totalGainPercent: Decimal
+    let daysGainValue: Decimal
+    let totalGainValue: Decimal
+}
+
+struct PositionSummaryRow: View {
+    let data: PositionSummaryData
+    let isExpanded: Bool
+    let sortOption: HoldingSortOption
+    
+    var body: some View {
+        HStack {
+            // Left: Symbol, Price, Day's Gain
+            VStack(alignment: .leading, spacing: 4) {
+                Text(data.symbol)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                if data.currentPrice > 0 {
+                    HStack(spacing: 8) {
+                        Text(PortfolioFormatter.formatPrice(data.currentPrice))
+                            .font(.subheadline)
+                        Text(PortfolioFormatter.formatPercent(data.daysGainPercent))
+                            .font(.caption)
+                            .foregroundStyle(data.daysGainPercent >= 0 ? .green : .red)
+                    }
+                } else if let name = data.name {
+                    Text(name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            
+            Spacer()
+            
+            // Right: Sorted Value or Market Value
+            VStack(alignment: .trailing, spacing: 2) {
+                if sortOption == .marketValue {
+                    Text(PortfolioFormatter.formatNumber(data.marketValue))
+                        .font(.headline)
+                    Text(PortfolioFormatter.formatPercent(data.totalGainPercent) + " Total")
+                        .font(.caption2)
+                        .foregroundStyle(data.totalGainPercent >= 0 ? .green : .red)
+                } else if sortOption == .daysGain || sortOption == .daysGainPercent {
+                    Text(PortfolioFormatter.formatSignedValue(data.daysGainValue))
+                        .font(.headline)
+                        .foregroundStyle(data.daysGainValue >= 0 ? .green : .red)
+                } else if sortOption == .totalGain || sortOption == .totalGainPercent {
+                    Text(PortfolioFormatter.formatSignedValue(data.totalGainValue, percent: data.totalGainPercent))
+                        .font(.headline)
+                        .foregroundStyle(data.totalGainValue >= 0 ? .green : .red)
+                }
+                
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+}
+
+struct PositionDetailView: View {
+    let position: SupabasePortfolioPosition
+    let viewModel: SupabasePortfolioViewModel
+    let summaryData: PositionSummaryData
+    let onAddTransaction: () -> Void
+    let onShowTransactions: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                detailRow("Avg. cost / share", value: PortfolioFormatter.formatDecimal(viewModel.averageCostPerShareNative(for: position)))
+                detailRow("Total cost", value: PortfolioFormatter.formatNumber(position.totalCostBase))
+                
+                Divider()
+
+                detailRow("Day's gain", value: PortfolioFormatter.formatSignedValue(summaryData.daysGainValue, percent: summaryData.daysGainPercent), valueColor: summaryData.daysGainValue >= 0 ? .green : .red)
+                detailRow("Total gain", value: PortfolioFormatter.formatSignedValue(summaryData.totalGainValue, percent: summaryData.totalGainPercent), valueColor: summaryData.totalGainValue >= 0 ? .green : .red)
+                detailRow("Market value", value: PortfolioFormatter.formatNumber(summaryData.marketValue))
+
+                Divider()
+
+                sharesRow
+                transactionsButton
+                
+                Divider()
+
+                detailRow("Total dividend income", value: PortfolioFormatter.formatNumber(viewModel.dividendIncome(for: position.symbol)))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color(.systemGray6))
+            
+            addTransactionButton
+        }
+    }
     
     private func detailRow(_ label: String, value: String, valueColor: Color = .primary) -> some View {
         HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
+            Text(label).foregroundStyle(.secondary)
             Spacer()
-            Text(value)
-                .foregroundStyle(valueColor)
+            Text(value).foregroundStyle(valueColor)
         }
         .font(.subheadline)
     }
     
-    private func formatPrice(_ value: Decimal) -> String {
-        let number = NSDecimalNumber(decimal: value)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 3
-        formatter.minimumFractionDigits = 2
-        formatter.usesGroupingSeparator = false
-        return formatter.string(from: number) ?? "0.00"
-    }
-    
-    private func formatPercent(_ value: Decimal) -> String {
-        let number = NSDecimalNumber(decimal: value)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 2
-        formatter.positivePrefix = "+"
-        formatter.negativePrefix = ""
-        let formatted = formatter.string(from: number) ?? "0.00"
-        return formatted + "%"
-    }
-    
-    private func formatNumber(_ value: Decimal) -> String {
-        let number = NSDecimalNumber(decimal: value)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        formatter.minimumFractionDigits = 0
-        formatter.usesGroupingSeparator = true
-        return formatter.string(from: number) ?? "0"
-    }
-    
-    private func formatDecimal(_ value: Decimal) -> String {
-        let number = NSDecimalNumber(decimal: value)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 2
-        formatter.usesGroupingSeparator = true
-        return formatter.string(from: number) ?? "0.00"
-    }
-    
-    private func formatSignedValue(_ value: Decimal, percent: Decimal?) -> String {
-        let number = NSDecimalNumber(decimal: value)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 2
-        formatter.minimumFractionDigits = 2
-        formatter.usesGroupingSeparator = true
-        formatter.positivePrefix = "+"
-        formatter.negativePrefix = "-"
-        let valueStr = formatter.string(from: number) ?? "0.00"
-        
-        if let pct = percent {
-            let pctNumber = NSDecimalNumber(decimal: pct)
-            let pctFormatter = NumberFormatter()
-            pctFormatter.numberStyle = .decimal
-            pctFormatter.maximumFractionDigits = 2
-            pctFormatter.minimumFractionDigits = 2
-            pctFormatter.positivePrefix = "+"
-            pctFormatter.negativePrefix = ""
-            let pctStr = pctFormatter.string(from: pctNumber) ?? "0.00"
-            return "\(valueStr) (\(pctStr)%)"
+    private var sharesRow: some View {
+        HStack {
+            Text("Shares").foregroundStyle(.secondary)
+            Spacer()
+            Text(PortfolioFormatter.formatDecimal(position.totalShares))
         }
-        return valueStr
+        .font(.subheadline)
     }
-
-    private var defaultLeftContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text(position.symbol)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-            }
-            
-            if let name = stockName {
-                Text(name)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            
-            if currentPrice > 0 {
-                HStack(spacing: 8) {
-                    Text(formatPrice(currentPrice))
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                    Text(formatPercent(daysGainPercent))
-                        .font(.caption)
-                        .foregroundStyle(daysGainPercent >= 0 ? .green : .red)
+    
+    private var transactionsButton: some View {
+        Button(action: onShowTransactions) {
+            HStack {
+                Text("Transactions").foregroundStyle(.secondary)
+                Spacer()
+                HStack(spacing: 4) {
+                    Text("\(viewModel.transactionCount(for: position.symbol)) total")
+                    Image(systemName: "chevron.right").font(.caption)
                 }
+                .foregroundStyle(.primary)
             }
+            .font(.subheadline)
         }
+        .buttonStyle(.plain)
+    }
+    
+    private var addTransactionButton: some View {
+        Button(action: onAddTransaction) {
+            HStack {
+                Image(systemName: "plus").font(.caption)
+                Text("Add transaction").font(.subheadline)
+            }
+            .foregroundStyle(.blue)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Color(.systemBackground))
+        }
+        .buttonStyle(.plain)
     }
 }
 
-private enum ActiveSheet: Identifiable {
-    case transactions
-    case addTransaction
+// MARK: - Transaction Sheets
 
+private enum ActiveSheet: Identifiable {
+    case transactions, addTransaction
     var id: Int { hashValue }
 }
 
@@ -749,149 +660,56 @@ private struct StockTransactionsSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack {
                 if viewModel.isLoading {
                     ProgressView("Loading transactions...")
-                        .frame(maxWidth: .infinity)
                 } else if filteredTransactions.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "arrow.left.arrow.right")
-                            .font(.system(size: 32))
-                            .foregroundStyle(.secondary)
-                        Text("No transactions yet")
-                            .font(.headline)
-                        Text("Add a transaction to see activity for this stock.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
+                    emptyTransactionsView
                 } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("\(filteredTransactions.count) Transactions")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        ScrollView {
-                            VStack(spacing: 12) {
-                                ForEach(filteredTransactions) { transaction in
-                                    SupabaseTransactionDetailRow(
-                                        transaction: transaction,
-                                        stockName: viewModel.getStockName(for: transaction.symbol)
-                                    )
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                        }
-                    }
+                    transactionsList
                 }
             }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 16)
             .navigationTitle(stockName ?? symbol)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        dismiss()
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
+    }
+    
+    private var emptyTransactionsView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+            Text("No transactions yet").font(.headline)
+            Text("Add a transaction to see activity for this stock.").font(.subheadline).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 32)
+    }
+    
+    private var transactionsList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(filteredTransactions.count) Transactions")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(filteredTransactions) { transaction in
+                        SupabaseTransactionDetailRow(
+                            transaction: transaction,
+                            stockName: viewModel.getStockName(for: transaction.symbol)
+                        )
                     }
                 }
+                .padding(.horizontal, 16)
             }
         }
-    }
-}
-
-struct PositionRow: View {
-    let position: SupabasePortfolioPosition
-    let latestPrice: Decimal?
-    let exchangeRate: Decimal
-    
-    var marketValueUSD: Decimal {
-        guard let price = latestPrice else { return 0 }
-        return price * position.totalShares * exchangeRate
-    }
-    
-    var gainLoss: Decimal {
-        marketValueUSD - position.totalCostBase
-    }
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(position.symbol)
-                    .font(.headline)
-                Text("\(position.totalShares, format: .number.precision(.fractionLength(2))) shares")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(marketValueUSD, format: .currency(code: "USD"))
-                    .font(.headline)
-                if let price = latestPrice {
-                    Text("@ \(price, format: .number.precision(.fractionLength(2)))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Text(gainLoss, format: .currency(code: "USD"))
-                    .font(.caption)
-                    .foregroundStyle(gainLoss >= 0 ? .green : .red)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-}
-
-struct SupabaseTransactionRow: View {
-    let transaction: SupabaseStockTransaction
-    
-    var tradeTypeColor: Color {
-        switch transaction.tradeType {
-        case .buy: return .green
-        case .sell: return .red
-        case .dividend: return .blue
-        }
-    }
-    
-    var tradeTypeIcon: String {
-        switch transaction.tradeType {
-        case .buy: return "arrow.down.circle.fill"
-        case .sell: return "arrow.up.circle.fill"
-        case .dividend: return "dollarsign.circle.fill"
-        }
-    }
-    
-    var body: some View {
-        HStack {
-            Image(systemName: tradeTypeIcon)
-                .foregroundStyle(tradeTypeColor)
-                .font(.title3)
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(transaction.symbol)
-                    .font(.headline)
-                HStack(spacing: 4) {
-                    Text(transaction.tradeType.rawValue.capitalized)
-                    Text("•")
-                    Text(transaction.tradeDate, style: .date)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(transaction.grossAmount, format: .currency(code: transaction.currency))
-                    .font(.headline)
-                Text("\(transaction.quantity, format: .number) @ \(transaction.pricePerShare, format: .currency(code: transaction.currency))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 8)
+        .padding(.vertical, 16)
     }
 }
 
