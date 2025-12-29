@@ -451,6 +451,34 @@ class SupabasePortfolioViewModel: ObservableObject {
         saveToCache()
     }
     
+    func addCashAccount(currency: String, displayName: String) async throws {
+        let account = try await PortfolioDataService.shared.createCashAccount(currency: currency, displayName: displayName)
+        
+        // Add the new account to the local cache
+        cashAccounts.append(account)
+        cashAccounts.sort { $0.displayName < $1.displayName }
+        
+        // Create a new account value entry
+        let exchangeRate = currencyRatesToUSD[currency.uppercased()] ?? 1.0
+        let newAccountValue = PortfolioDataService.AccountUSDValue(
+            id: account.id,
+            displayName: displayName,
+            nativeCurrency: currency.uppercased(),
+            nativeBalance: 0,
+            exchangeRate: exchangeRate,
+            usdValue: 0
+        )
+        accountUSDValues.append(newAccountValue)
+        accountUSDValues.sort { $0.displayName < $1.displayName }
+        
+        // Update cash balances
+        cashBalancesNative[account.id] = 0
+        cashBalancesBase[account.id] = 0
+        
+        // Save to cache
+        saveToCache()
+    }
+    
     func updateStock(id: UUID, name: String, exchange: String?) async throws {
         try await PortfolioDataService.shared.updateStock(id: id, name: name, exchange: exchange)
         self.stocks = try await PortfolioDataService.shared.fetchStocks()
