@@ -219,7 +219,7 @@ struct SupabaseStockTransaction: Codable, Identifiable {
 
 // MARK: - Portfolio Positions
 
-struct SupabasePortfolioPosition: Codable, Identifiable {
+struct SupabasePortfolioPosition: Codable, Identifiable, Equatable {
     let id: UUID
     let userId: UUID
     let stockId: UUID

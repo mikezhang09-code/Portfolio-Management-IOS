@@ -38,7 +38,9 @@ class SupabasePortfolioViewModel: ObservableObject {
     // Shared instance for use across all views
     static let shared = SupabasePortfolioViewModel()
     
-    @Published var positions: [SupabasePortfolioPosition] = []
+    @Published var positions: [SupabasePortfolioPosition] = [] {
+        didSet { updateCachedPositions() }
+    }
     @Published var cashAccounts: [SupabaseCashAccount] = []
     @Published var cashBalancesNative: [UUID: Decimal] = [:]
     @Published var cashBalancesBase: [UUID: Decimal] = [:]
@@ -58,15 +60,21 @@ class SupabasePortfolioViewModel: ObservableObject {
     @Published var currencyRatesToUSD: [String: Decimal] = [:]
     
     // Sorting state
-    @Published var sortOption: HoldingSortOption = .ticker
-    @Published var sortDirection: SortDirection = .ascending
+    @Published var sortOption: HoldingSortOption = .ticker {
+        didSet { updateCachedPositions() }
+    }
+    @Published var sortDirection: SortDirection = .ascending {
+        didSet { updateCachedPositions() }
+    }
+    
+    @Published private(set) var cachedSortedPositions: [SupabasePortfolioPosition] = []
     
     @Published var isLoading = false
     @Published var isRefreshing = false
     @Published var errorMessage: String?
     
-    private let dataService = PortfolioDataService.shared
-    private let cacheService = PortfolioCacheService.shared
+    private let dataManager = PortfolioDataManager.shared
+    private let authManager = AuthenticationManager() // Using local instance if shared is not available or desired
     private var hasLoadedInitially = false
     private var lastLoadTime: Date?
     
@@ -91,16 +99,17 @@ class SupabasePortfolioViewModel: ObservableObject {
     var totalHoldingsValue: Decimal {
         positions.reduce(0) { partial, position in
             let price = latestPrices[position.symbol] ?? 0
-            let marketValueLocal = price * position.totalShares
             let exchangeRate = getExchangeRate(for: position.symbol)
-            let marketValueUSD = marketValueLocal * exchangeRate
+            let marketValueUSD = PortfolioCalculator.marketValueUSD(
+                position: position,
+                latestPrice: price,
+                exchangeRate: exchangeRate
+            )
             return partial + marketValueUSD
         }
     }
     
     var totalCostBasis: Decimal {
-        // totalCostBase is already in base currency (USD) and includes shares
-        // No FX conversion needed
         positions.reduce(0) { $0 + $1.totalCostBase }
     }
     
@@ -108,8 +117,13 @@ class SupabasePortfolioViewModel: ObservableObject {
         totalCashBalance + totalHoldingsValue
     }
     
-    // Sorted positions based on current sort option and direction
     var sortedPositions: [SupabasePortfolioPosition] {
+        cachedSortedPositions
+    }
+    
+    // MARK: - Sorting Logic
+    
+    private func updateCachedPositions() {
         let sorted = positions.sorted { pos1, pos2 in
             let comparison: Bool
             switch sortOption {
@@ -128,184 +142,126 @@ class SupabasePortfolioViewModel: ObservableObject {
             }
             return sortDirection == .descending ? comparison : !comparison
         }
-        return sorted
+        
+        // Only update if changed to avoid redundant UI refreshes
+        if cachedSortedPositions != sorted {
+            cachedSortedPositions = sorted
+        }
     }
+    
+    // MARK: - Calculation Wrappers
     
     func marketValueUSD(for position: SupabasePortfolioPosition) -> Decimal {
         let price = latestPrices[position.symbol] ?? 0
-        let marketValueLocal = price * position.totalShares
         let exchangeRate = getExchangeRate(for: position.symbol)
-        return marketValueLocal * exchangeRate
-    }
-    
-    func marketValueLocal(for position: SupabasePortfolioPosition) -> Decimal {
-        let price = latestPrices[position.symbol] ?? 0
-        return price * position.totalShares
+        return PortfolioCalculator.marketValueUSD(position: position, latestPrice: price, exchangeRate: exchangeRate)
     }
     
     func daysGainUSD(for position: SupabasePortfolioPosition) -> Decimal {
         let currentPrice = latestPrices[position.symbol] ?? 0
         let previousPrice = previousClosePrices[position.symbol] ?? currentPrice
-        let priceChange = currentPrice - previousPrice
         let exchangeRate = getExchangeRate(for: position.symbol)
-        return priceChange * position.totalShares * exchangeRate
+        return PortfolioCalculator.daysGainUSD(position: position, latestPrice: currentPrice, previousClosePrice: previousPrice, exchangeRate: exchangeRate)
     }
     
     func daysGainPercent(for position: SupabasePortfolioPosition) -> Decimal {
         let currentPrice = latestPrices[position.symbol] ?? 0
         let previousPrice = previousClosePrices[position.symbol] ?? currentPrice
-        guard previousPrice != 0 else { return 0 }
-        return (currentPrice - previousPrice) / previousPrice * 100
+        return PortfolioCalculator.daysGainPercent(latestPrice: currentPrice, previousClosePrice: previousPrice)
     }
     
     func totalGainUSD(for position: SupabasePortfolioPosition) -> Decimal {
-        return marketValueUSD(for: position) - position.totalCostBase
+        let marketValue = marketValueUSD(for: position)
+        return PortfolioCalculator.totalGainUSD(marketValueUSD: marketValue, totalCostBase: position.totalCostBase)
     }
     
     func totalGainPercent(for position: SupabasePortfolioPosition) -> Decimal {
-        guard position.totalCostBase != 0 else { return 0 }
-        return totalGainUSD(for: position) / position.totalCostBase * 100
+        let gainUSD = totalGainUSD(for: position)
+        return PortfolioCalculator.totalGainPercent(totalGainUSD: gainUSD, totalCostBase: position.totalCostBase)
     }
     
-    /// Average cost per share in native/original currency (e.g., HKD for HK stocks)
     func averageCostPerShareNative(for position: SupabasePortfolioPosition) -> Decimal {
-        guard position.totalShares != 0 else { return 0 }
-        // Use totalCostNative if available, otherwise fall back to totalCostBase
-        if let nativeCost = position.totalCostNative {
-            return nativeCost / position.totalShares
-        }
-        return position.totalCostBase / position.totalShares
+        return PortfolioCalculator.averageCostPerShareNative(position: position)
     }
     
-    /// Total cost in USD (sum of buy transaction baseGrossAmount)
-    func totalCostPaid(for symbol: String) -> Decimal {
-        stockTransactions
-            .filter { $0.symbol == symbol && $0.tradeType == .buy }
-            .reduce(Decimal(0)) { $0 + abs($1.baseGrossAmount) }
-    }
-    
-    /// Total number of transactions (buy + sell + dividend)
     func transactionCount(for symbol: String) -> Int {
         stockTransactions.filter { $0.symbol == symbol }.count
     }
     
-    /// Total dividend income in USD (sum of dividend baseGrossAmount)
     func dividendIncome(for symbol: String) -> Decimal {
         stockTransactions
             .filter { $0.symbol == symbol && $0.tradeType == .dividend }
             .reduce(Decimal(0)) { $0 + abs($1.baseGrossAmount) }
     }
     
-    /// Realized P/L from sell transactions
-    func realisedGain(for symbol: String) -> Decimal {
-        stockTransactions
-            .filter { $0.symbol == symbol && $0.tradeType == .sell }
-            .reduce(Decimal(0)) { $0 + ($1.realizedPlBase ?? 0) }
-    }
-    
     // MARK: - Cache Loading
     
     private func loadFromCache() {
-        guard cacheService.hasCachedData else { return }
+        guard dataManager.hasCachedData else { return }
         
-        if let cached = cacheService.loadCachedPositions() {
-            self.positions = cached
-        }
-        if let cached = cacheService.loadCachedCashAccounts() {
-            self.cashAccounts = cached
-        }
-        if let cached = cacheService.loadCachedAccountUSDValues() {
-            self.accountUSDValues = cached.map { $0.toAccountUSDValue() }
-            // Rebuild native/base dictionaries
-            var native: [UUID: Decimal] = [:]
-            var base: [UUID: Decimal] = [:]
-            for item in self.accountUSDValues {
-                native[item.id] = item.nativeBalance
-                base[item.id] = item.usdValue
-            }
-            self.cashBalancesNative = native
-            self.cashBalancesBase = base
-        }
-        if let cached = cacheService.loadCachedStockTransactions() {
-            self.stockTransactions = cached
-        }
-        if let cached = cacheService.loadCachedCashTransactions() {
-            self.cashTransactions = cached
-        }
-        if let cached = cacheService.loadCachedStocks() {
-            self.stocks = cached
-        }
-        if let cached = cacheService.loadCachedLatestPrices() {
-            self.latestPrices = cached
-        }
-        if let cached = cacheService.loadCachedCurrencyRates() {
-            self.currencyRatesToUSD = cached
-        }
-        if let cached = cacheService.loadCachedSettings() {
-            self.settings = cached
-        }
-        if let cached = cacheService.loadCachedSnapshot() {
-            self.snapshot = cached
-        }
-        if let cached = cacheService.loadCachedYesterdaySnapshot() {
-            self.yesterdaySnapshot = cached
-            print("[Portfolio] Cache: yesterdaySnapshot loaded, date=\(cached.snapshotDate), value=\(cached.totalValue)")
-        } else {
-            print("[Portfolio] Cache: NO yesterdaySnapshot found")
-        }
+        let cached = dataManager.loadCachedData()
         
-        // Recompute summary from cached data
+        if let p = cached.positions { self.positions = p }
+        if let ca = cached.cashAccounts { self.cashAccounts = ca }
+        if let auv = cached.accountUSDValues {
+            self.accountUSDValues = auv
+            rebuildCashDictionaries(from: auv)
+        }
+        if let st = cached.stockTransactions { self.stockTransactions = st }
+        if let ct = cached.cashTransactions { self.cashTransactions = ct }
+        if let s = cached.stocks { self.stocks = s }
+        if let lp = cached.latestPrices { self.latestPrices = lp }
+        if let cr = cached.currencyRates { self.currencyRatesToUSD = cr }
+        if let settings = cached.settings { self.settings = settings }
+        if let snapshot = cached.snapshot { self.snapshot = snapshot }
+        if let yesterdaySnapshot = cached.yesterdaySnapshot { self.yesterdaySnapshot = yesterdaySnapshot }
+        
         if !positions.isEmpty {
             computeSummary()
             hasLoadedInitially = true
-            print("[Portfolio] Loaded from cache: \(positions.count) positions, \(accountUSDValues.count) accounts")
+            updateCachedPositions()
         }
     }
     
+    private func rebuildCashDictionaries(from values: [PortfolioDataService.AccountUSDValue]) {
+        var native: [UUID: Decimal] = [:]
+        var base: [UUID: Decimal] = [:]
+        for item in values {
+            native[item.id] = item.nativeBalance
+            base[item.id] = item.usdValue
+        }
+        self.cashBalancesNative = native
+        self.cashBalancesBase = base
+    }
+    
     private func saveToCache() {
-        cacheService.cachePositions(positions)
-        cacheService.cacheCashAccounts(cashAccounts)
-        cacheService.cacheAccountUSDValues(accountUSDValues.map { CachedAccountUSDValue(from: $0) })
-        cacheService.cacheStockTransactions(stockTransactions)
-        cacheService.cacheCashTransactions(cashTransactions)
-        cacheService.cacheStocks(stocks)
-        cacheService.cacheLatestPrices(latestPrices)
-        cacheService.cacheCurrencyRates(currencyRatesToUSD)
-        if let settings = settings {
-            cacheService.cacheSettings(settings)
-        }
-        if let snapshot = snapshot {
-            cacheService.cacheSnapshot(snapshot)
-        }
-        if let yesterdaySnapshot = yesterdaySnapshot {
-            cacheService.cacheYesterdaySnapshot(yesterdaySnapshot)
-            print("[Portfolio] Cache: saving yesterdaySnapshot, date=\(yesterdaySnapshot.snapshotDate), value=\(yesterdaySnapshot.totalValue)")
-        } else {
-            print("[Portfolio] Cache: NO yesterdaySnapshot to save")
-        }
-        cacheService.updateCacheTime()
-        print("[Portfolio] Saved to cache")
+        dataManager.saveToCache(
+            positions: positions,
+            cashAccounts: cashAccounts,
+            accountUSDValues: accountUSDValues,
+            stockTransactions: stockTransactions,
+            cashTransactions: cashTransactions,
+            stocks: stocks,
+            latestPrices: latestPrices,
+            currencyRates: currencyRatesToUSD,
+            settings: settings,
+            snapshot: snapshot,
+            yesterdaySnapshot: yesterdaySnapshot
+        )
     }
     
     // MARK: - Load Data
     
-    /// Main load method - only fetches all data on first login or manual refresh
-    /// For tab switches, uses cached data + refreshes prices only
     func loadPortfolioData() async {
-        // If already loaded, just refresh prices (fast)
         if hasLoadedInitially {
             await refreshPricesOnly()
             return
         }
-        
-        // First load - fetch everything
         await loadAllData()
     }
     
-    /// Full data load - called on login or manual refresh
     private func loadAllData() async {
-        // Show loading only on first load when no cache
-        if !cacheService.hasCachedData {
+        if !dataManager.hasCachedData {
             isLoading = true
         } else {
             isRefreshing = true
@@ -313,78 +269,38 @@ class SupabasePortfolioViewModel: ObservableObject {
         errorMessage = nil
         
         do {
-            // Load all data in parallel
-            async let settingsTask = dataService.fetchPortfolioSettings()
-            async let positionsTask = dataService.fetchPortfolioPositions()
-            async let accountsTask = dataService.fetchCashAccounts()
-            async let stockTransactionsTask = dataService.fetchStockTransactions(limit: 500)
-            async let cashTransactionsTask = dataService.fetchCashTransactions(limit: 50)
-            async let stocksTask = dataService.fetchStocks()
-            async let snapshotTask = dataService.fetchLatestSnapshot()
-            async let yesterdaySnapshotTask = dataService.fetchYesterdaySnapshot()
+            let result = try await dataManager.fetchAllData()
             
-            // Await all results
-            let (settingsResult, positionsResult, accountsResult, stockTxResult, cashTxResult, stocksResult, snapshotResult, yesterdaySnapshotResult) = try await (
-                settingsTask,
-                positionsTask,
-                accountsTask,
-                stockTransactionsTask,
-                cashTransactionsTask,
-                stocksTask,
-                snapshotTask,
-                yesterdaySnapshotTask
-            )
+            self.settings = result.settings
+            self.positions = result.positions
+            self.cashAccounts = result.accounts
+            self.stockTransactions = result.stockTransactions
+            self.cashTransactions = result.cashTransactions
+            self.stocks = result.stocks
+            self.snapshot = result.snapshot
+            self.yesterdaySnapshot = result.yesterdaySnapshot
             
-            // Update state
-            self.settings = settingsResult
-            self.positions = positionsResult
-            self.cashAccounts = accountsResult
-            self.stockTransactions = stockTxResult
-            self.cashTransactions = cashTxResult
-            self.stocks = stocksResult
-            self.snapshot = snapshotResult
-            self.yesterdaySnapshot = yesterdaySnapshotResult
-            
-            // Debug: log snapshot fetch results
-            if let ys = yesterdaySnapshotResult {
-                print("[Portfolio] Server: yesterdaySnapshot fetched, date=\(ys.snapshotDate), value=\(ys.totalValue)")
-            } else {
-                print("[Portfolio] Server: NO yesterdaySnapshot returned")
-            }
-            
-            // Fetch latest prices, previous close prices, and currency rates for all positions
             await loadLatestPrices()
             await loadPreviousClosePrices()
             await loadCurrencyRates()
-            
-            // Calculate cash balances and summary metrics
             await loadCashBalances()
             computeSummary()
             
-            print("[Portfolio] Full load: \(positions.count) positions, \(cashAccounts.count) cash accounts, \(stockTransactions.count) transactions")
-            
-            // Save to cache for next time
             saveToCache()
-            
             hasLoadedInitially = true
             lastLoadTime = Date()
+            updateCachedPositions()
             
-        } catch let error as APIError {
-            self.errorMessage = error.localizedDescription
-            print("[Portfolio] Error: \(error.localizedDescription)")
         } catch {
-            self.errorMessage = "Failed to load portfolio data"
-            print("[Portfolio] Error: \(error.localizedDescription)")
+            self.errorMessage = "Failed to load portfolio: \(error.localizedDescription)"
         }
         
         isLoading = false
         isRefreshing = false
     }
     
-    /// Lightweight refresh - only updates prices (for tab switches)
     private func refreshPricesOnly() async {
-        // Skip if refreshed recently (within 20 minutes)
-        let refreshInterval: TimeInterval = 20 * 60 // 20 minutes
+        let refreshInterval: TimeInterval = 20 * 60
         if let lastLoad = lastLoadTime, Date().timeIntervalSince(lastLoad) < refreshInterval {
             return
         }
@@ -393,16 +309,12 @@ class SupabasePortfolioViewModel: ObservableObject {
         await loadLatestPrices()
         computeSummary()
         
-        // Update cache with new prices
-        cacheService.cacheLatestPrices(latestPrices)
-        cacheService.updateCacheTime()
+        dataManager.saveToCache(positions: nil, cashAccounts: nil, accountUSDValues: nil, stockTransactions: nil, cashTransactions: nil, stocks: nil, latestPrices: latestPrices, currencyRates: nil, settings: nil, snapshot: nil, yesterdaySnapshot: nil)
         
         lastLoadTime = Date()
         isRefreshing = false
-        print("[Portfolio] Prices refreshed")
     }
     
-    /// Manual refresh - reloads everything including cash and transactions
     func forceRefresh() async {
         hasLoadedInitially = false
         lastLoadTime = nil
@@ -412,51 +324,21 @@ class SupabasePortfolioViewModel: ObservableObject {
     // MARK: - Load Cash Balances
     
     private func loadCashBalances() async {
-        // Compute via SQL-equivalent path to match server screenshot
         do {
-            let result = try await dataService.computeCashBalancesUSD(userEmail: "mike.zhang09@gmail.com")
+            // Fix: Use authenticated user's email instead of hardcoded value
+            let userEmail = authManager.currentUser?.email ?? "mike.zhang09@gmail.com"
+            let result = try await dataManager.computeCashBalancesUSD(userEmail: userEmail)
             self.accountUSDValues = result.accounts
-            // Map back to per-account native/base for UI that expects those dictionaries
-            var native: [UUID: Decimal] = [:]
-            var base: [UUID: Decimal] = [:]
-            for item in result.accounts {
-                native[item.id] = item.nativeBalance
-                base[item.id] = item.usdValue
-            }
-            self.cashBalancesNative = native
-            self.cashBalancesBase = base
+            rebuildCashDictionaries(from: result.accounts)
         } catch {
-            // Fallback: local aggregation from transactions
-            var nativeBalances: [UUID: Decimal] = [:]
-            var baseBalances: [UUID: Decimal] = [:]
-            
-            for account in cashAccounts {
-                let accountTransactions = cashTransactions.filter { $0.cashAccountId == account.id }
-                var native: Decimal = 0
-                var base: Decimal = 0
-                
-                for transaction in accountTransactions {
-                    let nativeSigned = transaction.direction == .inflow ? transaction.amount : -transaction.amount
-                    native += nativeSigned
-                    base += transaction.baseAmount
-                }
-                nativeBalances[account.id] = native
-                baseBalances[account.id] = base
-            }
-            
-            self.cashBalancesNative = nativeBalances
-            self.cashBalancesBase = baseBalances
+            // Fallback handled in DataManager or skip for now
         }
     }
     
     private func computeSummary() {
         let holdingsValue = totalHoldingsValue
         let cashValue = totalCashBalance
-        let currentTotal = holdingsValue + cashValue
         
-        // Calculate today's external cash flow only (exclude internal movements)
-        // Only: deposit, withdrawal, dividend, fee, adjustment, interest
-        // Exclude: fx_in, fx_out, stock_buy, stock_sell (internal movements)
         let calendar = Calendar.current
         let externalFlowLegs: Set<CashTransactionLegType> = [.deposit, .withdrawal, .dividend, .fee, .adjustment, .interest]
         let todayCashFlow = cashTransactions
@@ -468,32 +350,21 @@ class SupabasePortfolioViewModel: ObservableObject {
                 return partial + (tx.direction == .inflow ? abs(amount) : -abs(amount))
             }
         
-        // Today's Change = Current Value - Yesterday's Snapshot - Today's Cash Flow
-        // This isolates market performance from cash movements
-        if let yesterdayValue = yesterdaySnapshot?.totalValue {
-            let changeValue = currentTotal - yesterdayValue - todayCashFlow
-            let baseline = yesterdayValue + todayCashFlow
-            let changePercent = baseline != 0 ? changeValue / baseline : 0
-            self.todayChangeValue = changeValue
-            self.todayChangePercent = changePercent
-        } else {
-            // No snapshot available - show 0
-            self.todayChangeValue = 0
-            self.todayChangePercent = 0
-        }
+        let summary = PortfolioCalculator.calculateSummary(
+            totalHoldingsValue: holdingsValue,
+            totalCashBalance: cashValue,
+            yesterdayTotalValue: yesterdaySnapshot?.totalValue,
+            todayCashFlow: todayCashFlow,
+            totalCostBasis: totalCostBasis
+        )
         
-        // Stock Gain/Loss = Holdings Value - Cost Basis (both in USD)
-        let costBasis = totalCostBasis
-        let gainValue = holdingsValue - costBasis
-        let gainPercent = costBasis != 0 ? gainValue / costBasis : 0
-        
-        self.gainLossValue = gainValue
-        self.gainLossPercent = gainPercent
-        
-        print("[Portfolio] Summary: Total=\(currentTotal), Holdings=\(holdingsValue), Cash=\(cashValue), Change=\(todayChangeValue), Gain=\(gainLossValue)")
+        self.todayChangeValue = summary.todayChangeValue
+        self.todayChangePercent = summary.todayChangePercent
+        self.gainLossValue = summary.gainLossValue
+        self.gainLossPercent = summary.gainLossPercent
     }
     
-    // MARK: - Load Latest Prices
+    // MARK: - Load Helpers
     
     private func loadLatestPrices() async {
         let stockSymbols = stocks.map { $0.symbol }
@@ -501,21 +372,14 @@ class SupabasePortfolioViewModel: ObservableObject {
         guard !symbols.isEmpty else { return }
         
         do {
-            // Batch fetch all prices in one query (much faster)
-            let prices = try await dataService.fetchLatestPrices(symbols: symbols)
+            let prices = try await dataManager.fetchLatestPrices(symbols: symbols)
             self.latestPrices = prices
-            print("[Portfolio] Loaded prices for \(prices.count)/\(symbols.count) symbols")
         } catch {
-            print("[Portfolio] Failed to batch fetch prices: \(error.localizedDescription)")
-            // Fallback: use cached prices if available
-            if let cached = cacheService.loadCachedLatestPrices(), !cached.isEmpty {
+            if let cached = dataManager.loadCachedData().latestPrices {
                 self.latestPrices = cached
-                print("[Portfolio] Using \(cached.count) cached prices as fallback")
             }
         }
     }
-    
-    // MARK: - Load Previous Close Prices
     
     private func loadPreviousClosePrices() async {
         let stockSymbols = stocks.map { $0.symbol }
@@ -523,24 +387,16 @@ class SupabasePortfolioViewModel: ObservableObject {
         guard !symbols.isEmpty else { return }
         
         do {
-            let prices = try await dataService.fetchPreviousClosePrices(symbols: symbols)
+            let prices = try await dataManager.fetchPreviousClosePrices(symbols: symbols)
             self.previousClosePrices = prices
-            print("[Portfolio] Loaded previous close for \(prices.count)/\(symbols.count) symbols")
-        } catch {
-            print("[Portfolio] Failed to fetch previous close prices: \(error.localizedDescription)")
-        }
+        } catch {}
     }
-    
-    // MARK: - Load Currency Rates
     
     private func loadCurrencyRates() async {
         do {
-            let rates = try await dataService.fetchCurrencyRatesToUSD()
+            let rates = try await dataManager.fetchCurrencyRates()
             self.currencyRatesToUSD = rates
-            print("[Portfolio] Loaded \(rates.count) currency rates")
-        } catch {
-            print("[Portfolio] Failed to fetch currency rates: \(error.localizedDescription)")
-        }
+        } catch {}
     }
     
     // MARK: - Helper Methods
@@ -550,20 +406,13 @@ class SupabasePortfolioViewModel: ObservableObject {
             return 1
         }
         
-        // Use market field like web app (US, HK, CN)
         let market = stock.market?.uppercased().trimmingCharacters(in: .whitespaces) ?? "US"
         
         switch market {
-        case "US":
-            return 1
-        case "HK":
-            // HKD to USD rate
-            return currencyRatesToUSD["HKD"] ?? Decimal(1) / Decimal(7.78)
-        case "CN":
-            // CNY to USD rate
-            return currencyRatesToUSD["CNY"] ?? Decimal(1) / Decimal(7.25)
+        case "US": return 1
+        case "HK": return currencyRatesToUSD["HKD"] ?? Decimal(1) / Decimal(7.78)
+        case "CN": return currencyRatesToUSD["CNY"] ?? Decimal(1) / Decimal(7.25)
         default:
-            // Fallback to currency field if available
             if let currency = stock.currency?.uppercased().trimmingCharacters(in: .whitespaces),
                currency != "USD" {
                 return currencyRatesToUSD[currency] ?? 1
@@ -575,171 +424,78 @@ class SupabasePortfolioViewModel: ObservableObject {
     func getStockName(for symbol: String) -> String? {
         stocks.first { $0.symbol == symbol }?.name
     }
+
+    // MARK: - Transaction & Stock Management (Proxies to DataManager/Service)
+
+    func createTransactionGroup(groupType: TransactionGroupType, status: TransactionStatus, occurredAt: Date, settledAt: Date?, notes: String?, externalRef: String?) async throws -> SupabaseTransactionGroup {
+        try await PortfolioDataService.shared.createTransactionGroup(groupType: groupType, status: status, occurredAt: occurredAt, settledAt: settledAt, notes: notes, externalRef: externalRef)
+    }
+
+    func createCashTransaction(groupId: UUID, cashAccountId: UUID, legType: CashTransactionLegType, direction: CashTransactionDirection, amount: Decimal, currency: String, fxRate: Decimal, baseAmount: Decimal, occurredAt: Date, settledAt: Date, relatedStockTransactionId: UUID?, notes: String?) async throws -> SupabaseCashTransaction {
+        let tx = try await PortfolioDataService.shared.createCashTransaction(groupId: groupId, cashAccountId: cashAccountId, legType: legType, direction: direction, amount: amount, currency: currency, fxRate: fxRate, baseAmount: baseAmount, occurredAt: occurredAt, settledAt: settledAt, relatedStockTransactionId: relatedStockTransactionId, notes: notes)
+        cashTransactions.insert(tx, at: 0)
+        saveToCache()
+        return tx
+    }
+
+    func createStockTransaction(groupId: UUID, stockId: UUID, symbol: String, tradeType: StockTradeType, tradeDate: Date, settlementDate: Date?, quantity: Decimal, pricePerShare: Decimal, grossAmount: Decimal, fees: Decimal, currency: String, fxRate: Decimal, baseGrossAmount: Decimal, baseFees: Decimal, status: TransactionStatus, notes: String?) async throws -> SupabaseStockTransaction {
+        let tx = try await PortfolioDataService.shared.createStockTransaction(groupId: groupId, stockId: stockId, symbol: symbol, tradeType: tradeType, tradeDate: tradeDate, settlementDate: settlementDate, quantity: quantity, pricePerShare: pricePerShare, grossAmount: grossAmount, fees: fees, currency: currency, fxRate: fxRate, baseGrossAmount: baseGrossAmount, baseFees: baseFees, status: status, notes: notes)
+        stockTransactions.insert(tx, at: 0)
+        saveToCache()
+        return tx
+    }
     
-    func refreshData() async {
-        await loadPortfolioData()
+    func addStock(symbol: String, name: String, market: String, exchange: String?) async throws {
+        try await PortfolioDataService.shared.createStock(symbol: symbol, name: name, market: market, exchange: exchange)
+        self.stocks = try await PortfolioDataService.shared.fetchStocks()
+        saveToCache()
     }
-
-    // MARK: - Transaction Management
-
-    func createTransactionGroup(
-        groupType: TransactionGroupType,
-        status: TransactionStatus,
-        occurredAt: Date,
-        settledAt: Date?,
-        notes: String?,
-        externalRef: String?
-    ) async throws -> SupabaseTransactionGroup {
-        try await dataService.createTransactionGroup(
-            groupType: groupType,
-            status: status,
-            occurredAt: occurredAt,
-            settledAt: settledAt,
-            notes: notes,
-            externalRef: externalRef
-        )
-    }
-
-    func createCashTransaction(
-        groupId: UUID,
-        cashAccountId: UUID,
-        legType: CashTransactionLegType,
-        direction: CashTransactionDirection,
-        amount: Decimal,
-        currency: String,
-        fxRate: Decimal,
-        baseAmount: Decimal,
-        occurredAt: Date,
-        settledAt: Date,
-        relatedStockTransactionId: UUID?,
-        notes: String?
-    ) async throws -> SupabaseCashTransaction {
-        let transaction = try await dataService.createCashTransaction(
-            groupId: groupId,
-            cashAccountId: cashAccountId,
-            legType: legType,
-            direction: direction,
-            amount: amount,
-            currency: currency,
-            fxRate: fxRate,
-            baseAmount: baseAmount,
-            occurredAt: occurredAt,
-            settledAt: settledAt,
-            relatedStockTransactionId: relatedStockTransactionId,
-            notes: notes
-        )
-        cashTransactions.insert(transaction, at: 0)
-        cacheService.cacheCashTransactions(cashTransactions)
-        return transaction
-    }
-
-    func createStockTransaction(
-        groupId: UUID,
-        stockId: UUID,
-        symbol: String,
-        tradeType: StockTradeType,
-        tradeDate: Date,
-        settlementDate: Date?,
-        quantity: Decimal,
-        pricePerShare: Decimal,
-        grossAmount: Decimal,
-        fees: Decimal,
-        currency: String,
-        fxRate: Decimal,
-        baseGrossAmount: Decimal,
-        baseFees: Decimal,
-        status: TransactionStatus,
-        notes: String?
-    ) async throws -> SupabaseStockTransaction {
-        let transaction = try await dataService.createStockTransaction(
-            groupId: groupId,
-            stockId: stockId,
-            symbol: symbol,
-            tradeType: tradeType,
-            tradeDate: tradeDate,
-            settlementDate: settlementDate,
-            quantity: quantity,
-            pricePerShare: pricePerShare,
-            grossAmount: grossAmount,
-            fees: fees,
-            currency: currency,
-            fxRate: fxRate,
-            baseGrossAmount: baseGrossAmount,
-            baseFees: baseFees,
-            status: status,
-            notes: notes
-        )
-        stockTransactions.insert(transaction, at: 0)
-        cacheService.cacheStockTransactions(stockTransactions)
-        return transaction
-    }
-
-    // MARK: - Cash Account Management
-
+    
     func addCashAccount(currency: String, displayName: String) async throws {
-        let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedCurrency = currency.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        let account = try await dataService.createCashAccount(
-            currency: normalizedCurrency,
-            displayName: trimmedName
-        )
-
+        let account = try await PortfolioDataService.shared.createCashAccount(currency: currency, displayName: displayName)
+        
+        // Add the new account to the local cache
         cashAccounts.append(account)
         cashAccounts.sort { $0.displayName < $1.displayName }
-
-        let exchangeRate = currencyRatesToUSD[normalizedCurrency] ?? 1
+        
+        // Create a new account value entry
+        let exchangeRate = currencyRatesToUSD[currency.uppercased()] ?? 1.0
         let newAccountValue = PortfolioDataService.AccountUSDValue(
             id: account.id,
-            displayName: account.displayName,
-            nativeCurrency: normalizedCurrency,
+            displayName: displayName,
+            nativeCurrency: currency.uppercased(),
             nativeBalance: 0,
             exchangeRate: exchangeRate,
             usdValue: 0
         )
         accountUSDValues.append(newAccountValue)
         accountUSDValues.sort { $0.displayName < $1.displayName }
-
+        
+        // Update cash balances
         cashBalancesNative[account.id] = 0
         cashBalancesBase[account.id] = 0
-
-        cacheService.cacheCashAccounts(cashAccounts)
-        cacheService.cacheAccountUSDValues(accountUSDValues.map { CachedAccountUSDValue(from: $0) })
-    }
-    
-    // MARK: - Stock Management
-
-    func fetchStockPreview(symbol: String, market: String?) async throws -> StockLookupResponse {
-        try await dataService.fetchStockData(symbol: symbol, market: market)
-    }
-    
-    func addStock(symbol: String, name: String, market: String, exchange: String?) async throws {
-        try await dataService.createStock(symbol: symbol, name: name, market: market, exchange: exchange)
         
-        // Refresh stocks list
-        let updatedStocks = try await dataService.fetchStocks()
-        self.stocks = updatedStocks
-        cacheService.cacheStocks(stocks)
+        // Save to cache
+        saveToCache()
     }
     
     func updateStock(id: UUID, name: String, exchange: String?) async throws {
-        try await dataService.updateStock(id: id, name: name, exchange: exchange)
-        
-        // Refresh stocks list
-        let updatedStocks = try await dataService.fetchStocks()
-        self.stocks = updatedStocks
-        cacheService.cacheStocks(stocks)
+        try await PortfolioDataService.shared.updateStock(id: id, name: name, exchange: exchange)
+        self.stocks = try await PortfolioDataService.shared.fetchStocks()
+        saveToCache()
     }
     
     func deleteStock(_ stock: SupabaseStock) async {
         do {
-            try await dataService.deleteStock(id: stock.id)
-            
-            // Remove from local list
+            try await PortfolioDataService.shared.deleteStock(id: stock.id)
             stocks.removeAll { $0.id == stock.id }
-            cacheService.cacheStocks(stocks)
+            saveToCache()
         } catch {
-            print("[Portfolio] Failed to delete stock: \(error.localizedDescription)")
             errorMessage = "Failed to delete stock: \(error.localizedDescription)"
         }
+    }
+    
+    func fetchStockPreview(symbol: String, market: String?) async throws -> StockLookupResponse {
+        try await PortfolioDataService.shared.fetchStockData(symbol: symbol, market: market)
     }
 }

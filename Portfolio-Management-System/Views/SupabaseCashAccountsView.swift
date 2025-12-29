@@ -78,7 +78,9 @@ struct SupabaseCashAccountsView: View {
                             .padding(.horizontal, 16)
 
                             if viewModel.accountUSDValues.isEmpty {
-                                ContentUnavailableView("No cash accounts yet", systemImage: "banknote") {
+                                ContentUnavailableView {
+                                    Label("No cash accounts yet", systemImage: "banknote")
+                                } description: {
                                     Text("Add a cash account to start tracking balances.")
                                 }
                                 .padding(.horizontal, 16)
@@ -132,7 +134,6 @@ struct SupabaseCashAccountsView: View {
                         .disabled(viewModel.isLoading || viewModel.isRefreshing)
                     }
                 }
-            }
             }
             .refreshable {
                 await viewModel.forceRefresh()
