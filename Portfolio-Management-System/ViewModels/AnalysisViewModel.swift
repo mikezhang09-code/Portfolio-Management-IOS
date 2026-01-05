@@ -200,7 +200,7 @@ class AnalysisViewModel: ObservableObject {
         BenchmarkOption(id: "^DJI", name: "Dow Jones"),
         BenchmarkOption(id: "000001.SS", name: "SSE Composite"),
         BenchmarkOption(id: "399001.SZ", name: "SZSE Component"),
-        BenchmarkOption(id: "00300.SS", name: "CSI 300"),
+        BenchmarkOption(id: "000300.SS", name: "CSI 300"),
         BenchmarkOption(id: "^FTSE", name: "FTSE 100"),
         BenchmarkOption(id: "^HSI", name: "Hang Seng")
     ]
@@ -256,11 +256,11 @@ class AnalysisViewModel: ObservableObject {
                 } else {
                     // Prepare for next batch: continue from the oldest date received
                     if let oldestInBatch = batch.last?.snapshotDate {
-                        // Subtract 1 second/day to avoid overlap depending on precision, 
+                        // Subtract 1 second/day to avoid overlap depending on precision,
                         // but usually simply using the date as 'lte' (less than or equal) might duplicate.
-                        // Ideally we use 'lt' (less than). 
+                        // Ideally we use 'lt' (less than).
                         // Since API uses inclusive date filtering usually, we need to be careful.
-                        // Let's assume we filter by < oldestInBatch. 
+                        // Let's assume we filter by < oldestInBatch.
                         // However, SupabaseAPIClient uses `lte` for endDate.
                         // So we set new endDate to the day before the oldest date.
                         currentEndDate = Calendar.current.date(byAdding: .day, value: -1, to: oldestInBatch) ?? oldestInBatch
