@@ -110,6 +110,10 @@ class AnalysisViewModel: ObservableObject {
     var currentReturnPercent: Decimal {
         filteredPortfolioSnapshots.first?.totalReturnPercent ?? 0
     }
+
+    var selectedBenchmarkName: String {
+        availableBenchmarks.first(where: { $0.id == selectedBenchmark })?.name ?? "Benchmark"
+    }
     
     // MARK: - Risk Metrics
     
