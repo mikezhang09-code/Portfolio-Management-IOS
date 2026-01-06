@@ -509,17 +509,16 @@ private struct PortfolioHeroCard: View {
     let holdingsValue: Decimal
     let baseCurrency: String
     
-    private var totalDouble: Double { toDouble(totalValue) }
+    private var totalDouble: Double { NSDecimalNumber(decimal: totalValue).doubleValue }
     
     private var allocation: (cash: Double, stocks: Double) {
-        let total = max(toDouble(cashValue + holdingsValue), 0.0001)
-        let cashPortion = min(toDouble(cashValue) / total, 1)
-        let stockPortion = min(toDouble(holdingsValue) / total, 1)
+        let total = max(NSDecimalNumber(decimal: cashValue + holdingsValue).doubleValue, 0.0001)
+        let cashPortion = min(NSDecimalNumber(decimal: cashValue).doubleValue / total, 1)
+        let stockPortion = min(NSDecimalNumber(decimal: holdingsValue).doubleValue / total, 1)
         return (cash: cashPortion, stocks: stockPortion)
     }
     
     private var sparklinePoints: [Double] {
-        // Static, non-random path to avoid jitter while still giving a sense of motion
         [0.18, 0.35, 0.3, 0.52, 0.45, 0.62, 0.58, 0.74, 0.68, 0.9]
     }
     
@@ -543,9 +542,18 @@ private struct PortfolioHeroCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Total value")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.8))
+                        HStack(spacing: 6) {
+                            Text("Total value")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.8))
+                            Text(baseCurrency.uppercased())
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.white.opacity(0.2))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .clipShape(Capsule())
+                        }
                         Text(PortfolioFormatter.formatUSD(totalValue))
                             .font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
@@ -559,27 +567,19 @@ private struct PortfolioHeroCard: View {
                 }
                 
                 HStack(spacing: 12) {
-                    pill(
+                    gainPill(
                         title: "Today",
-                        value: PortfolioFormatter.formatSignedValue(dayChangeValue, percent: dayChangePercent),
-                        isPositive: dayChangeValue >= 0
+                        value: dayChangeValue,
+                        percent: dayChangePercent
                     )
                     
-                    pill(
+                    gainPill(
                         title: "Total",
-                        value: PortfolioFormatter.formatSignedValue(gainLossValue, percent: gainLossPercent),
-                        isPositive: gainLossValue >= 0
+                        value: gainLossValue,
+                        percent: gainLossPercent
                     )
                     
                     Spacer()
-                    
-                    Text("Base \(baseCurrency.uppercased())")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.white.opacity(0.12))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .clipShape(Capsule())
                 }
                 
                 VStack(alignment: .leading, spacing: 8) {
@@ -625,22 +625,30 @@ private struct PortfolioHeroCard: View {
         )
     }
     
-    private func pill(title: String, value: String, isPositive: Bool) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
+    private func gainPill(title: String, value: Decimal, percent: Decimal) -> some View {
+        let isPositive = value >= 0
+        let displayPercent = percent * 100  // Convert decimal to percentage (0.01 -> 1%)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.7))
+                Image(systemName: isPositive ? "arrow.up.right" : "arrow.down.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            Text(PortfolioFormatter.formatSignedUSD(value))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Text(PortfolioFormatter.formatPercent(displayPercent))
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.8))
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(isPositive ? .white : .white.opacity(0.9))
-            Image(systemName: isPositive ? "arrow.up.right" : "arrow.down.right")
-                .font(.caption2.weight(.semibold))
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(isPositive ? Color.white.opacity(0.16) : Color.white.opacity(0.12))
-        .foregroundStyle(.white)
-        .clipShape(Capsule())
+        .background(isPositive ? Color.white.opacity(0.16) : Color.red.opacity(0.2))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -669,7 +677,7 @@ private struct HeroSparkline: View {
                     startPoint: .leading,
                     endPoint: .trailing
                 ),
-                style: StrokeStyle(lineWidth: 3, lineJoin: .round, lineCap: .round)
+                style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
             )
             .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
         }
