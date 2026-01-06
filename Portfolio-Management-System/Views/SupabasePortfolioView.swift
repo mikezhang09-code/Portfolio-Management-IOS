@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct SupabasePortfolioView: View {
     @ObservedObject private var viewModel = SupabasePortfolioViewModel.shared
@@ -57,20 +58,16 @@ struct SupabasePortfolioView: View {
     
     private var portfolioContent: some View {
         VStack(spacing: 16) {
-            // Portfolio Summary Card
-            VStack(spacing: 16) {
-                summaryHeader
-                totalValueSection
-                Divider()
-                cashStocksRow
-                Divider()
-                performanceRow
-            }
-            .frame(maxWidth: .infinity)
-            .padding(20)
-            .background(Color(.systemBackground))
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+            PortfolioHeroCard(
+                totalValue: viewModel.totalPortfolioValue,
+                dayChangeValue: viewModel.todayChangeValue,
+                dayChangePercent: viewModel.todayChangePercent,
+                gainLossValue: viewModel.gainLossValue,
+                gainLossPercent: viewModel.gainLossPercent,
+                cashValue: viewModel.totalCashBalance,
+                holdingsValue: viewModel.totalHoldingsValue,
+                baseCurrency: viewModel.baseCurrency
+            )
             .padding(.horizontal, 16)
             
             // Holdings Section
@@ -140,12 +137,12 @@ struct SupabasePortfolioView: View {
     private var holdingsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("All")
-                    .font(.subheadline)
+                Text("All Holdings")
+                    .font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color(.systemGray5))
-                    .cornerRadius(16)
+                    .padding(.vertical, 8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(14)
                 
                 Spacer()
                 
@@ -164,6 +161,7 @@ struct SupabasePortfolioView: View {
                         position: position,
                         viewModel: viewModel,
                         isExpanded: expandedPositionId == position.id,
+                        totalPortfolioValue: viewModel.totalPortfolioValue,
                         onToggle: {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 if expandedPositionId == position.id {
@@ -418,6 +416,7 @@ struct ExpandablePositionRow: View {
     let position: SupabasePortfolioPosition
     @ObservedObject var viewModel: SupabasePortfolioViewModel
     let isExpanded: Bool
+    let totalPortfolioValue: Decimal
     let onToggle: () -> Void
 
     @State private var activeSheet: ActiveSheet?
@@ -430,9 +429,12 @@ struct ExpandablePositionRow: View {
             currentPrice: viewModel.latestPrices[position.symbol] ?? 0,
             daysGainPercent: viewModel.daysGainPercent(for: position),
             marketValue: viewModel.marketValueUSD(for: position),
+            allocationPercent: allocationPercent(for: position),
             totalGainPercent: viewModel.totalGainPercent(for: position),
             daysGainValue: viewModel.daysGainUSD(for: position),
-            totalGainValue: viewModel.totalGainUSD(for: position)
+            totalGainValue: viewModel.totalGainUSD(for: position),
+            currency: stockCurrency(for: position.symbol),
+            market: stockMarket(for: position.symbol)
         )
     }
     
@@ -478,6 +480,205 @@ struct ExpandablePositionRow: View {
             }
         }
     }
+    
+    private func allocationPercent(for position: SupabasePortfolioPosition) -> Decimal {
+        let total = totalPortfolioValue
+        guard total > 0 else { return 0 }
+        let share = viewModel.marketValueUSD(for: position) / total
+        return share * 100
+    }
+    
+    private func stockCurrency(for symbol: String) -> String? {
+        viewModel.stocks.first(where: { $0.symbol == symbol })?.currency?.uppercased()
+    }
+    
+    private func stockMarket(for symbol: String) -> String? {
+        viewModel.stocks.first(where: { $0.symbol == symbol })?.market?.uppercased()
+    }
+}
+
+// MARK: - Hero Summary Card
+
+private struct PortfolioHeroCard: View {
+    let totalValue: Decimal
+    let dayChangeValue: Decimal
+    let dayChangePercent: Decimal
+    let gainLossValue: Decimal
+    let gainLossPercent: Decimal
+    let cashValue: Decimal
+    let holdingsValue: Decimal
+    let baseCurrency: String
+    
+    private var totalDouble: Double { toDouble(totalValue) }
+    
+    private var allocation: (cash: Double, stocks: Double) {
+        let total = max(toDouble(cashValue + holdingsValue), 0.0001)
+        let cashPortion = min(toDouble(cashValue) / total, 1)
+        let stockPortion = min(toDouble(holdingsValue) / total, 1)
+        return (cash: cashPortion, stocks: stockPortion)
+    }
+    
+    private var sparklinePoints: [Double] {
+        // Static, non-random path to avoid jitter while still giving a sense of motion
+        [0.18, 0.35, 0.3, 0.52, 0.45, 0.62, 0.58, 0.74, 0.68, 0.9]
+    }
+    
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.cyan.opacity(0.85), Color.blue.opacity(0.9)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .opacity(0.25)
+                )
+                .shadow(color: .black.opacity(0.12), radius: 18, x: 0, y: 8)
+            
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Total value")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.8))
+                        Text(PortfolioFormatter.formatUSD(totalValue))
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
+                    
+                    Spacer()
+                    
+                    HeroSparkline(points: sparklinePoints)
+                        .frame(width: 96, height: 48)
+                        .opacity(0.9)
+                }
+                
+                HStack(spacing: 12) {
+                    pill(
+                        title: "Today",
+                        value: PortfolioFormatter.formatSignedValue(dayChangeValue, percent: dayChangePercent),
+                        isPositive: dayChangeValue >= 0
+                    )
+                    
+                    pill(
+                        title: "Total",
+                        value: PortfolioFormatter.formatSignedValue(gainLossValue, percent: gainLossPercent),
+                        isPositive: gainLossValue >= 0
+                    )
+                    
+                    Spacer()
+                    
+                    Text("Base \(baseCurrency.uppercased())")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.white.opacity(0.12))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .clipShape(Capsule())
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Allocation")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.75))
+                        Spacer()
+                        Text("Cash \(PortfolioFormatter.formatUSD(cashValue)) | Stocks \(PortfolioFormatter.formatUSD(holdingsValue))")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
+                    
+                    GeometryReader { geo in
+                        let totalWidth = geo.size.width
+                        let cashWidth = totalWidth * allocation.cash
+                        let stocksWidth = totalWidth * allocation.stocks
+                        
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(.white.opacity(0.12))
+                                .frame(height: 10)
+                            
+                            HStack(spacing: 0) {
+                                Capsule()
+                                    .fill(Color.white.opacity(0.85))
+                                    .frame(width: cashWidth, height: 10)
+                                Capsule()
+                                    .fill(Color.green.opacity(0.9))
+                                    .frame(width: stocksWidth, height: 10)
+                            }
+                        }
+                    }
+                    .frame(height: 10)
+                }
+            }
+            .padding(20)
+        }
+        .frame(maxWidth: .infinity, minHeight: 170, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+    
+    private func pill(title: String, value: String, isPositive: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.8))
+            Text(value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(isPositive ? .white : .white.opacity(0.9))
+            Image(systemName: isPositive ? "arrow.up.right" : "arrow.down.right")
+                .font(.caption2.weight(.semibold))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(isPositive ? Color.white.opacity(0.16) : Color.white.opacity(0.12))
+        .foregroundStyle(.white)
+        .clipShape(Capsule())
+    }
+}
+
+private struct HeroSparkline: View {
+    let points: [Double]
+    
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            let normalized = normalize(points: points)
+            let step = width / CGFloat(max(normalized.count - 1, 1))
+            
+            Path { path in
+                guard let first = normalized.first else { return }
+                path.move(to: CGPoint(x: 0, y: height - height * CGFloat(first)))
+                for (index, value) in normalized.enumerated() where index > 0 {
+                    let x = CGFloat(index) * step
+                    let y = height - height * CGFloat(value)
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            .stroke(
+                LinearGradient(
+                    colors: [.white.opacity(0.8), .white.opacity(0.3)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                style: StrokeStyle(lineWidth: 3, lineJoin: .round, lineCap: .round)
+            )
+            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+        }
+    }
+    
+    private func normalize(points: [Double]) -> [Double] {
+        guard let min = points.min(), let max = points.max(), max - min > 0 else { return points }
+        return points.map { ($0 - min) / (max - min) * 0.85 + 0.05 }
+    }
 }
 
 // MARK: - Position Sub-components
@@ -488,9 +689,12 @@ struct PositionSummaryData {
     let currentPrice: Decimal
     let daysGainPercent: Decimal
     let marketValue: Decimal
+    let allocationPercent: Decimal
     let totalGainPercent: Decimal
     let daysGainValue: Decimal
     let totalGainValue: Decimal
+    let currency: String?
+    let market: String?
 }
 
 struct PositionSummaryRow: View {
@@ -499,20 +703,38 @@ struct PositionSummaryRow: View {
     let sortOption: HoldingSortOption
     
     var body: some View {
-        HStack {
-            // Left: Symbol, Price, Day's Gain
-            VStack(alignment: .leading, spacing: 4) {
-                Text(data.symbol)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(data.symbol)
+                        .font(.headline.weight(.semibold))
+                    if let currency = data.currency {
+                        Text(currency)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(.systemGray6))
+                            .clipShape(Capsule())
+                    }
+                    if let market = data.market {
+                        Text(market)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 
                 if data.currentPrice > 0 {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Text(PortfolioFormatter.formatPrice(data.currentPrice))
                             .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         Text(PortfolioFormatter.formatPercent(data.daysGainPercent))
-                            .font(.caption)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background((data.daysGainPercent >= 0 ? Color.green : Color.red).opacity(0.12))
                             .foregroundStyle(data.daysGainPercent >= 0 ? .green : .red)
+                            .clipShape(Capsule())
                     }
                 } else if let name = data.name {
                     Text(name)
@@ -524,32 +746,27 @@ struct PositionSummaryRow: View {
             
             Spacer()
             
-            // Right: Sorted Value or Market Value
-            VStack(alignment: .trailing, spacing: 2) {
-                if sortOption == .marketValue {
-                    Text(PortfolioFormatter.formatNumber(data.marketValue))
-                        .font(.headline)
-                    Text(PortfolioFormatter.formatPercent(data.totalGainPercent) + " Total")
-                        .font(.caption2)
-                        .foregroundStyle(data.totalGainPercent >= 0 ? .green : .red)
-                } else if sortOption == .daysGain || sortOption == .daysGainPercent {
-                    Text(PortfolioFormatter.formatSignedValue(data.daysGainValue))
-                        .font(.headline)
-                        .foregroundStyle(data.daysGainValue >= 0 ? .green : .red)
-                } else if sortOption == .totalGain || sortOption == .totalGainPercent {
-                    Text(PortfolioFormatter.formatSignedValue(data.totalGainValue, percent: data.totalGainPercent))
-                        .font(.headline)
-                        .foregroundStyle(data.totalGainValue >= 0 ? .green : .red)
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(PortfolioFormatter.formatNumber(data.marketValue))
+                    .font(.headline)
+                HStack(spacing: 8) {
+                    Text(PortfolioFormatter.formatPercent(data.allocationPercent))
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue.opacity(0.12))
+                        .foregroundStyle(.blue)
+                        .clipShape(Capsule())
+                    
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .background(Color(.systemBackground))
         .contentShape(Rectangle())
     }
 }
@@ -563,30 +780,60 @@ struct PositionDetailView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 12) {
-                detailRow("Avg. cost / share", value: PortfolioFormatter.formatDecimal(viewModel.averageCostPerShareNative(for: position)))
-                detailRow("Total cost", value: PortfolioFormatter.formatNumber(position.totalCostBase))
+            VStack(spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Performance")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        detailRow("Day's gain", value: PortfolioFormatter.formatSignedValue(summaryData.daysGainValue, percent: summaryData.daysGainPercent), valueColor: summaryData.daysGainValue >= 0 ? .green : .red)
+                        detailRow("Total gain", value: PortfolioFormatter.formatSignedValue(summaryData.totalGainValue, percent: summaryData.totalGainPercent), valueColor: summaryData.totalGainValue >= 0 ? .green : .red)
+                        detailRow("Dividend income", value: PortfolioFormatter.formatNumber(viewModel.dividendIncome(for: position.symbol)))
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Cost & Qty")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        detailRow("Avg cost / share", value: PortfolioFormatter.formatDecimal(viewModel.averageCostPerShareNative(for: position)))
+                        detailRow("Shares", value: PortfolioFormatter.formatDecimal(position.totalShares))
+                        detailRow("Market value", value: PortfolioFormatter.formatNumber(summaryData.marketValue))
+                        detailRow("Total cost", value: PortfolioFormatter.formatNumber(position.totalCostBase))
+                    }
+                }
                 
-                Divider()
-
-                detailRow("Day's gain", value: PortfolioFormatter.formatSignedValue(summaryData.daysGainValue, percent: summaryData.daysGainPercent), valueColor: summaryData.daysGainValue >= 0 ? .green : .red)
-                detailRow("Total gain", value: PortfolioFormatter.formatSignedValue(summaryData.totalGainValue, percent: summaryData.totalGainPercent), valueColor: summaryData.totalGainValue >= 0 ? .green : .red)
-                detailRow("Market value", value: PortfolioFormatter.formatNumber(summaryData.marketValue))
-
-                Divider()
-
-                sharesRow
-                transactionsButton
-                
-                Divider()
-
-                detailRow("Total dividend income", value: PortfolioFormatter.formatNumber(viewModel.dividendIncome(for: position.symbol)))
+                Button(action: onShowTransactions) {
+                    HStack {
+                        Text("View transactions")
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Text("\(viewModel.transactionCount(for: position.symbol))")
+                            Image(systemName: "chevron.right").font(.caption)
+                        }
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
             .background(Color(.systemGray6))
             
-            addTransactionButton
+            Button(action: onAddTransaction) {
+                HStack {
+                    Image(systemName: "plus").font(.caption)
+                    Text("Add transaction").font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.blue)
+            }
+            .buttonStyle(.plain)
         }
     }
     
@@ -597,45 +844,6 @@ struct PositionDetailView: View {
             Text(value).foregroundStyle(valueColor)
         }
         .font(.subheadline)
-    }
-    
-    private var sharesRow: some View {
-        HStack {
-            Text("Shares").foregroundStyle(.secondary)
-            Spacer()
-            Text(PortfolioFormatter.formatDecimal(position.totalShares))
-        }
-        .font(.subheadline)
-    }
-    
-    private var transactionsButton: some View {
-        Button(action: onShowTransactions) {
-            HStack {
-                Text("Transactions").foregroundStyle(.secondary)
-                Spacer()
-                HStack(spacing: 4) {
-                    Text("\(viewModel.transactionCount(for: position.symbol)) total")
-                    Image(systemName: "chevron.right").font(.caption)
-                }
-                .foregroundStyle(.primary)
-            }
-            .font(.subheadline)
-        }
-        .buttonStyle(.plain)
-    }
-    
-    private var addTransactionButton: some View {
-        Button(action: onAddTransaction) {
-            HStack {
-                Image(systemName: "plus").font(.caption)
-                Text("Add transaction").font(.subheadline)
-            }
-            .foregroundStyle(.blue)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(Color(.systemBackground))
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -716,3 +924,5 @@ private struct StockTransactionsSheet: View {
 #Preview {
     SupabasePortfolioView()
 }
+
+
