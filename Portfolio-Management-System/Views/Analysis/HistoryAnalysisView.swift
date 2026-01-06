@@ -184,6 +184,7 @@ struct HistoryAnalysisView: View {
     private var chartCard: some View {
         let portfolioData = viewModel.normalizeData(viewModel.filteredPortfolioSnapshots)
         let benchmarkData = viewModel.normalizeBenchmarkData(viewModel.filteredBenchmarkSnapshots)
+        let benchmarkName = viewModel.selectedBenchmarkName
         
         // Calculate Y-Axis Scale
         let allValues = portfolioData.map(\.1) + benchmarkData.map(\.1)
@@ -214,7 +215,7 @@ struct HistoryAnalysisView: View {
                             x: .value("Date", item.0),
                             y: .value("Value", item.1)
                         )
-                        .foregroundStyle(by: .value("Series", "S&P 500"))
+                        .foregroundStyle(by: .value("Series", benchmarkName))
                         .lineStyle(StrokeStyle(lineWidth: 2))
                     }
                     
@@ -225,7 +226,7 @@ struct HistoryAnalysisView: View {
                 }
                 .chartForegroundStyleScale([
                     "Portfolio": .blue,
-                    "S&P 500": .orange
+                    benchmarkName: .orange
                 ])
                 .chartYScale(domain: yDomain)
                 .chartYAxis {
@@ -268,7 +269,7 @@ struct HistoryAnalysisView: View {
                         Circle()
                             .fill(.orange)
                             .frame(width: 8, height: 8)
-                        Text("S&P 500")
+                        Text(benchmarkName)
                             .font(.caption)
                             .bold()
                     }
