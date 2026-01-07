@@ -45,7 +45,7 @@ struct SupabaseStocksView: View {
                 // Tab Picker
                 Picker("View", selection: $selectedTab) {
                     Text("Market Overview").tag(0)
-                    Text("Manage Stocks").tag(1)
+                    Text("Manage Assets").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -62,7 +62,7 @@ struct SupabaseStocksView: View {
                         sortDirection: $stockSortDirection
                     )
                 } else {
-                    ManageStocksTab(
+                    ManageAssetsTab(
                         viewModel: viewModel,
                         stocks: filteredStocks,
                         showingAddStock: $showingAddStock,
@@ -175,48 +175,81 @@ struct MarketOverviewTab: View {
             EmptyStockSearchView()
         } else {
             VStack(spacing: 0) {
-                // Sort Header
-                HStack {
-                    Text("Sort by")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    
-                    Button {
-                        showSortSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(sortOption.rawValue)
-                                .font(.subheadline.weight(.medium))
-                            Image(systemName: sortDirection.icon)
-                                .font(.caption)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue)
-                        .foregroundStyle(.white)
-                        .cornerRadius(16)
-                    }
-                    
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                
                 ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(sortedStocks) { stock in
-                            StockCardView(
-                                stock: stock,
-                                price: viewModel.latestPrices[stock.symbol],
-                                previousClosePrice: viewModel.previousClosePrices[stock.symbol],
-                                isSelected: selectedStock?.id == stock.id
-                            )
-                            .onTapGesture {
-                                selectedStock = stock
+                    VStack(alignment: .leading, spacing: 20) {
+                        // Market Indices Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Market Indices")
+                                .font(.headline)
+                                .padding(.horizontal, 16)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(viewModel.marketIndices) { index in
+                                        MarketIndexCard(
+                                            index: index,
+                                            price: viewModel.indexLatestPrices[index.symbol],
+                                            changePercent: viewModel.indexChangePercents[index.symbol]
+                                        )
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 4)
                             }
                         }
+                        
+                        // Sort Header
+                        HStack(spacing: 8) {
+                            Text("Sort by")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Button {
+                                showSortSheet = true
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(sortOption.rawValue)
+                                        .font(.subheadline.weight(.medium))
+                                    Image(systemName: sortDirection.icon)
+                                        .font(.caption)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue)
+                                .foregroundStyle(.white)
+                                .cornerRadius(16)
+                            }
+                            
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        
+                        // Watchlist Title
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("My Watchlist")
+                                .font(.headline)
+                                .padding(.horizontal, 16)
+                        }
+                        
+                        // Stocks Section
+                        VStack(alignment: .leading, spacing: 12) {
+                            LazyVStack(spacing: 12) {
+                                ForEach(sortedStocks) { stock in
+                                    StockCardView(
+                                        stock: stock,
+                                        price: viewModel.latestPrices[stock.symbol],
+                                        previousClosePrice: viewModel.previousClosePrices[stock.symbol],
+                                        isSelected: selectedStock?.id == stock.id
+                                    )
+                                    .onTapGesture {
+                                        selectedStock = stock
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
                     }
-                    .padding()
+                    .padding(.vertical)
                 }
             }
             .sheet(isPresented: $showSortSheet) {
@@ -232,9 +265,9 @@ struct MarketOverviewTab: View {
     }
 }
 
-// MARK: - Manage Stocks Tab
+// MARK: - Manage Assets Tab
 
-struct ManageStocksTab: View {
+struct ManageAssetsTab: View {
     @ObservedObject var viewModel: SupabasePortfolioViewModel
     let stocks: [SupabaseStock]
     @Binding var showingAddStock: Bool
@@ -311,6 +344,85 @@ struct EmptyStockSearchView: View {
     }
 }
 
+// MARK: - Market Index Card
+
+struct MarketIndexCard: View {
+    let index: SupabasePortfolioViewModel.MarketIndex
+    let price: Decimal?
+    let changePercent: Decimal?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(index.region)
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(regionColor.opacity(0.15))
+                    .foregroundColor(regionColor)
+                    .cornerRadius(4)
+                
+                Spacer()
+                
+                if let percent = changePercent {
+                    Text(formatPercent(percent))
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(percent >= 0 ? .green : .red)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(index.name)
+                    .font(.system(size: 14, weight: .bold))
+                    .lineLimit(1)
+                
+                if let priceValue = price {
+                    Text(formatPrice(priceValue))
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                } else {
+                    Text("--")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 140)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+    
+    private var regionColor: Color {
+        switch index.region {
+        case "US": return .blue
+        case "CN": return .red
+        case "HK": return .orange
+        case "UK": return .purple
+        default: return .gray
+        }
+    }
+    
+    private func formatPrice(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: number) ?? "\(value)"
+    }
+    
+    private func formatPercent(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.positivePrefix = "+"
+        return "\(formatter.string(from: number) ?? "0.00")%"
+    }
+}
+
 // MARK: - Stock Card View (for Market Overview)
 
 struct StockCardView: View {
@@ -334,6 +446,12 @@ struct StockCardView: View {
         case "CNY": return "¥"
         default: return "$"
         }
+    }
+    
+    private var dailyChangeValue: Decimal? {
+        guard let currentPrice = price,
+              let prevClose = previousClosePrice else { return nil }
+        return currentPrice - prevClose
     }
     
     private var dailyChangePercent: Decimal? {
@@ -369,17 +487,25 @@ struct StockCardView: View {
                             .foregroundStyle(.secondary)
                     }
                     
-                    // Daily percentage change - displayed prominently below price
-                    if let percent = dailyChangePercent {
-                        Text(formatPercent(percent))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(percent >= 0 ? .green : .red)
+                    // Daily change - displayed under price
+                    HStack(spacing: 4) {
+                        if let change = dailyChangeValue {
+                            Text(formatSignedPrice(change))
+                                .font(.caption.weight(.medium))
+                                .foregroundColor(change >= 0 ? .green : .red)
+                        }
+                        
+                        if let percent = dailyChangePercent {
+                            Text("(\(formatPercent(percent)))")
+                                .font(.caption.weight(.medium))
+                                .foregroundColor(percent >= 0 ? .green : .red)
+                        }
                     }
                     
                     HStack(spacing: 4) {
                         Text(stock.market ?? "US")
-                            .font(.caption)
+                            .font(.caption2)
+                            .fontWeight(.semibold)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(marketColor.opacity(0.15))
@@ -387,7 +513,7 @@ struct StockCardView: View {
                             .cornerRadius(4)
                         
                         Text(currency)
-                            .font(.caption)
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -419,6 +545,16 @@ struct StockCardView: View {
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
         return formatter.string(from: number) ?? "\(value)"
+    }
+    
+    private func formatSignedPrice(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.positivePrefix = "+"
+        return "\(formatter.string(from: number) ?? "0.00")"
     }
     
     private func formatPercent(_ value: Decimal) -> String {

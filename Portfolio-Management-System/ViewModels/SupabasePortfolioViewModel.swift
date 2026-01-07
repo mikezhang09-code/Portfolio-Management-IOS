@@ -59,6 +59,28 @@ class SupabasePortfolioViewModel: ObservableObject {
     @Published var previousClosePrices: [String: Decimal] = [:]
     @Published var currencyRatesToUSD: [String: Decimal] = [:]
     
+    // Market Indices
+    struct MarketIndex: Identifiable {
+        let id = UUID()
+        let symbol: String
+        let name: String
+        let region: String
+    }
+    
+    @Published var marketIndices: [MarketIndex] = [
+        MarketIndex(symbol: "^GSPC", name: "S&P 500", region: "US"),
+        MarketIndex(symbol: "^IXIC", name: "NASDAQ", region: "US"),
+        MarketIndex(symbol: "^DJI", name: "Dow Jones", region: "US"),
+        MarketIndex(symbol: "000001.SS", name: "SSE Composite", region: "CN"),
+        MarketIndex(symbol: "399001.SZ", name: "SZSE Component", region: "CN"),
+        MarketIndex(symbol: "000300.SS", name: "CSI 300", region: "CN"),
+        MarketIndex(symbol: "^HSI", name: "Hang Seng", region: "HK"),
+        MarketIndex(symbol: "^FTSE", name: "FTSE 100", region: "UK")
+    ]
+    @Published var indexLatestPrices: [String: Decimal] = [:]
+    @Published var indexPreviousClosePrices: [String: Decimal] = [:]
+    @Published var indexChangePercents: [String: Decimal] = [:]
+    
     // Sorting state
     @Published var sortOption: HoldingSortOption = .ticker {
         didSet { updateCachedPositions() }
@@ -282,6 +304,7 @@ class SupabasePortfolioViewModel: ObservableObject {
             
             await loadLatestPrices()
             await loadPreviousClosePrices()
+            await loadMarketIndices()
             await loadCurrencyRates()
             await loadCashBalances()
             computeSummary()
@@ -299,14 +322,13 @@ class SupabasePortfolioViewModel: ObservableObject {
         isRefreshing = false
     }
     
-    private func refreshPricesOnly() async {
-        let refreshInterval: TimeInterval = 20 * 60
-        if let lastLoad = lastLoadTime, Date().timeIntervalSince(lastLoad) < refreshInterval {
-            return
-        }
+    func refreshPricesOnly() async {
+        guard !isRefreshing else { return }
         
         isRefreshing = true
         await loadLatestPrices()
+        await loadPreviousClosePrices()
+        await loadMarketIndices()
         computeSummary()
         
         dataManager.saveToCache(positions: nil, cashAccounts: nil, accountUSDValues: nil, stockTransactions: nil, cashTransactions: nil, stocks: nil, latestPrices: latestPrices, currencyRates: nil, settings: nil, snapshot: nil, yesterdaySnapshot: nil)
@@ -369,11 +391,24 @@ class SupabasePortfolioViewModel: ObservableObject {
     private func loadLatestPrices() async {
         let stockSymbols = stocks.map { $0.symbol }
         let symbols = stockSymbols.isEmpty ? positions.map { $0.symbol } : stockSymbols
-        guard !symbols.isEmpty else { return }
+        
+        let indexSymbols = marketIndices.map { $0.symbol }
+        let allSymbols = Array(Set(symbols + indexSymbols))
+        
+        guard !allSymbols.isEmpty else { return }
         
         do {
-            let prices = try await dataManager.fetchLatestPrices(symbols: symbols)
+            let prices = try await dataManager.fetchLatestPrices(symbols: allSymbols)
             self.latestPrices = prices
+            
+            // Extract index prices
+            var indexPrices: [String: Decimal] = [:]
+            for symbol in indexSymbols {
+                if let price = prices[symbol] {
+                    indexPrices[symbol] = price
+                }
+            }
+            self.indexLatestPrices = indexPrices
         } catch {
             if let cached = dataManager.loadCachedData().latestPrices {
                 self.latestPrices = cached
@@ -384,12 +419,46 @@ class SupabasePortfolioViewModel: ObservableObject {
     private func loadPreviousClosePrices() async {
         let stockSymbols = stocks.map { $0.symbol }
         let symbols = stockSymbols.isEmpty ? positions.map { $0.symbol } : stockSymbols
-        guard !symbols.isEmpty else { return }
+        
+        let indexSymbols = marketIndices.map { $0.symbol }
+        let allSymbols = Array(Set(symbols + indexSymbols))
+        
+        guard !allSymbols.isEmpty else { return }
         
         do {
-            let prices = try await dataManager.fetchPreviousClosePrices(symbols: symbols)
+            let prices = try await dataManager.fetchPreviousClosePrices(symbols: allSymbols)
             self.previousClosePrices = prices
+            
+            // Extract index prices
+            var indexPrices: [String: Decimal] = [:]
+            for symbol in indexSymbols {
+                if let price = prices[symbol] {
+                    indexPrices[symbol] = price
+                }
+            }
+            self.indexPreviousClosePrices = indexPrices
         } catch {}
+    }
+    
+    private func loadMarketIndices() async {
+        do {
+            let liveIndices = try await PortfolioDataService.shared.fetchLiveMarketIndices()
+            
+            var latest: [String: Decimal] = [:]
+            var percents: [String: Decimal] = [:]
+            
+            for index in liveIndices {
+                latest[index.symbol] = index.value
+                percents[index.symbol] = index.changePercent
+            }
+            
+            self.indexLatestPrices = latest
+            self.indexChangePercents = percents
+            
+            print("[ViewModel] Loaded \(liveIndices.count) live market indices")
+        } catch {
+            print("[ViewModel] Error loading live market indices: \(error)")
+        }
     }
     
     private func loadCurrencyRates() async {

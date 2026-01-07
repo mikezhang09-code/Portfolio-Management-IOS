@@ -14,6 +14,16 @@ struct StockLookupResponse: Decodable {
     let market: String?
 }
 
+struct MarketIndexLive: Decodable {
+    let symbol: String
+    let name: String
+    let value: Decimal
+    let change: Decimal
+    let changePercent: Decimal
+    let region: String
+    let lastUpdated: Date
+}
+
 @MainActor
 class PortfolioDataService {
     static let shared = PortfolioDataService()
@@ -435,6 +445,13 @@ class PortfolioDataService {
 
         let body = StockLookupBody(symbol: symbol, market: market)
         return try await apiClient.postFunction(name: "fetch-stock-data", body: body)
+    }
+    
+    // MARK: - Market Indices (Live Data via Edge Function)
+    
+    func fetchLiveMarketIndices() async throws -> [MarketIndexLive] {
+        struct EmptyBody: Encodable {}
+        return try await apiClient.postFunction(name: "fetch-market-indices", body: EmptyBody())
     }
     
     // MARK: - Fetch Snapshots

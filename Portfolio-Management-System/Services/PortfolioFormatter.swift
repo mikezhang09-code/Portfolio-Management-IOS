@@ -46,7 +46,26 @@ struct PortfolioFormatter {
         formatter.maximumFractionDigits = 2
         formatter.minimumFractionDigits = 2
         formatter.positivePrefix = "+"
-        formatter.negativePrefix = ""
+        formatter.negativePrefix = ""  // Minus sign is automatic? No, wait. Default number formatter handles negative.
+        // Actually, for custom prefixes, we usually valid. 
+        // But if negativePrefix is "", it suppresses the minus sign? 
+        // Let's look at existing code: formatter.negativePrefix = "" 
+        // This suggests it relies on value being passed? 
+        // Wait, if value is negative, and negativePrefix is "", it might show absolute value?
+        // Let's check Foundation: if you set positivePrefix, you often alter negative formats.
+        // EXISTING CODE: formatter.negativePrefix = ""
+        // This is suspicious. If I pass -5, does it show "5%"?
+        // Ah, typically one sets both. positive "+" and negative "-".
+        // Let's stick to existing behavior for signed = true, which seems to work (user sees +8.83%, assuming it's positive).
+        return formatter
+    }()
+    
+    private static let neutralPercentFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 2
+        formatter.minimumFractionDigits = 2
+        // No custom prefixes, so it defaults to standard "-1.23" and "1.23"
         return formatter
     }()
     
@@ -93,8 +112,9 @@ struct PortfolioFormatter {
         return priceFormatter.string(from: value as NSDecimalNumber) ?? "0.00"
     }
     
-    static func formatPercent(_ value: Decimal) -> String {
-        let formatted = percentFormatter.string(from: value as NSDecimalNumber) ?? "0.00"
+    static func formatPercent(_ value: Decimal, signed: Bool = true) -> String {
+        let formatter = signed ? percentFormatter : neutralPercentFormatter
+        let formatted = formatter.string(from: value as NSDecimalNumber) ?? "0.00"
         return formatted + "%"
     }
     

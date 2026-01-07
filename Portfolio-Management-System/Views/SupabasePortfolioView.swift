@@ -156,6 +156,13 @@ struct SupabasePortfolioView: View {
             
             // Holdings List
             VStack(spacing: 0) {
+                // Column Headers
+                tableHeader
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                
+                Divider()
+                
                 ForEach(viewModel.sortedPositions) { position in
                     ExpandablePositionRow(
                         position: position,
@@ -178,10 +185,36 @@ struct SupabasePortfolioView: View {
                     }
                 }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 0) // Remove vertical padding from container since we have header padding
+            .padding(.bottom, 8) // Add bottom padding back
             .background(Color(.systemBackground))
             .cornerRadius(12)
             .padding(.horizontal, 16)
+        }
+    }
+    
+    private var tableHeader: some View {
+        HStack {
+            Text("Asset")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            Text(rightColumnHeaderTitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+    
+    private var rightColumnHeaderTitle: String {
+        switch viewModel.sortOption {
+        case .daysGain, .daysGainPercent:
+            return "Day's Gain / Allocation"
+        case .totalGain, .totalGainPercent:
+            return "Total Gain / Return"
+        default:
+            return "Value / Allocation"
         }
     }
     
@@ -557,6 +590,8 @@ private struct PortfolioHeroCard: View {
                         Text(PortfolioFormatter.formatUSD(totalValue))
                             .font(.system(size: 34, weight: .bold, design: .rounded))
                             .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     
                     Spacer()
@@ -755,16 +790,40 @@ struct PositionSummaryRow: View {
             Spacer()
             
             VStack(alignment: .trailing, spacing: 6) {
-                Text(PortfolioFormatter.formatNumber(data.marketValue))
-                    .font(.headline)
+                switch sortOption {
+                case .daysGain, .daysGainPercent:
+                    Text(PortfolioFormatter.formatSignedUSD(data.daysGainValue))
+                        .font(.headline)
+                        .foregroundStyle(data.daysGainValue >= 0 ? .green : .red)
+                case .totalGain, .totalGainPercent:
+                    Text(PortfolioFormatter.formatSignedUSD(data.totalGainValue))
+                        .font(.headline)
+                        .foregroundStyle(data.totalGainValue >= 0 ? .green : .red)
+                default:
+                    Text(PortfolioFormatter.formatNumber(data.marketValue))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                }
+                
                 HStack(spacing: 8) {
-                    Text(PortfolioFormatter.formatPercent(data.allocationPercent))
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue.opacity(0.12))
-                        .foregroundStyle(.blue)
-                        .clipShape(Capsule())
+                    switch sortOption {
+                    case .totalGain, .totalGainPercent:
+                        Text(PortfolioFormatter.formatPercent(data.totalGainPercent))
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background((data.totalGainPercent >= 0 ? Color.green : Color.red).opacity(0.12))
+                            .foregroundStyle(data.totalGainPercent >= 0 ? .green : .red)
+                            .clipShape(Capsule())
+                    default:
+                        Text(PortfolioFormatter.formatPercent(data.allocationPercent, signed: false))
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.blue.opacity(0.12))
+                            .foregroundStyle(.blue)
+                            .clipShape(Capsule())
+                    }
                     
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
