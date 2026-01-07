@@ -233,10 +233,18 @@ class SupabasePortfolioViewModel: ObservableObject {
         if let ct = cached.cashTransactions { self.cashTransactions = ct }
         if let s = cached.stocks { self.stocks = s }
         if let lp = cached.latestPrices { self.latestPrices = lp }
+        if let pcp = cached.previousClosePrices { self.previousClosePrices = pcp }
         if let cr = cached.currencyRates { self.currencyRatesToUSD = cr }
         if let settings = cached.settings { self.settings = settings }
         if let snapshot = cached.snapshot { self.snapshot = snapshot }
         if let yesterdaySnapshot = cached.yesterdaySnapshot { self.yesterdaySnapshot = yesterdaySnapshot }
+        
+        if let summary = cached.todaySummary {
+            self.todayChangeValue = summary.todayChangeValue
+            self.todayChangePercent = summary.todayChangePercent
+            self.gainLossValue = summary.gainLossValue
+            self.gainLossPercent = summary.gainLossPercent
+        }
         
         if !positions.isEmpty {
             computeSummary()
@@ -268,7 +276,14 @@ class SupabasePortfolioViewModel: ObservableObject {
             currencyRates: currencyRatesToUSD,
             settings: settings,
             snapshot: snapshot,
-            yesterdaySnapshot: yesterdaySnapshot
+            yesterdaySnapshot: yesterdaySnapshot,
+            previousClosePrices: previousClosePrices,
+            todaySummary: PortfolioSummaryCache(
+                todayChangeValue: todayChangeValue,
+                todayChangePercent: todayChangePercent,
+                gainLossValue: gainLossValue,
+                gainLossPercent: gainLossPercent
+            )
         )
     }
     
@@ -276,13 +291,19 @@ class SupabasePortfolioViewModel: ObservableObject {
     
     func loadPortfolioData() async {
         if hasLoadedInitially {
-            await refreshPricesOnly()
+            // Check if we need a full refresh (first time today)
+            if let lastTime = dataManager.lastCacheTime, !Calendar.current.isDateInToday(lastTime) {
+                print("[ViewModel] Cache is from a previous day, performing full refresh")
+                await loadAllData()
+            } else {
+                await refreshPricesOnly()
+            }
             return
         }
         await loadAllData()
     }
     
-    private func loadAllData() async {
+    private func loadAllData(force: Bool = false) async {
         if !dataManager.hasCachedData {
             isLoading = true
         } else {
@@ -303,9 +324,9 @@ class SupabasePortfolioViewModel: ObservableObject {
             self.yesterdaySnapshot = result.yesterdaySnapshot
             
             await loadLatestPrices()
-            await loadPreviousClosePrices()
+            await loadPreviousClosePrices(force: force)
             await loadMarketIndices()
-            await loadCurrencyRates()
+            await loadCurrencyRates(force: force)
             await loadCashBalances()
             computeSummary()
             
@@ -322,16 +343,16 @@ class SupabasePortfolioViewModel: ObservableObject {
         isRefreshing = false
     }
     
-    func refreshPricesOnly() async {
+    func refreshPricesOnly(force: Bool = false) async {
         guard !isRefreshing else { return }
         
         isRefreshing = true
         await loadLatestPrices()
-        await loadPreviousClosePrices()
+        await loadPreviousClosePrices(force: force)
         await loadMarketIndices()
+        await loadCurrencyRates(force: force)
+        await loadCashBalances()
         computeSummary()
-        
-        dataManager.saveToCache(positions: nil, cashAccounts: nil, accountUSDValues: nil, stockTransactions: nil, cashTransactions: nil, stocks: nil, latestPrices: latestPrices, currencyRates: nil, settings: nil, snapshot: nil, yesterdaySnapshot: nil)
         
         lastLoadTime = Date()
         isRefreshing = false
@@ -340,7 +361,7 @@ class SupabasePortfolioViewModel: ObservableObject {
     func forceRefresh() async {
         hasLoadedInitially = false
         lastLoadTime = nil
-        await loadAllData()
+        await loadAllData(force: true)
     }
     
     // MARK: - Load Cash Balances
@@ -416,7 +437,7 @@ class SupabasePortfolioViewModel: ObservableObject {
         }
     }
     
-    private func loadPreviousClosePrices() async {
+    private func loadPreviousClosePrices(force: Bool = false) async {
         let stockSymbols = stocks.map { $0.symbol }
         let symbols = stockSymbols.isEmpty ? positions.map { $0.symbol } : stockSymbols
         
@@ -424,6 +445,18 @@ class SupabasePortfolioViewModel: ObservableObject {
         let allSymbols = Array(Set(symbols + indexSymbols))
         
         guard !allSymbols.isEmpty else { return }
+        
+        // Optimization: Strictly skip if already loaded today (past data doesn't change)
+        if let lastTime = dataManager.lastCacheTime,
+           Calendar.current.isDateInToday(lastTime),
+           !previousClosePrices.isEmpty {
+            let neededSet = Set(allSymbols)
+            let existingSet = Set(previousClosePrices.keys)
+            if neededSet.isSubset(of: existingSet) {
+                print("[ViewModel] Skipping redundant previousClosePrices fetch (past data)")
+                return
+            }
+        }
         
         do {
             let prices = try await dataManager.fetchPreviousClosePrices(symbols: allSymbols)
@@ -461,7 +494,16 @@ class SupabasePortfolioViewModel: ObservableObject {
         }
     }
     
-    private func loadCurrencyRates() async {
+    private func loadCurrencyRates(force: Bool = false) async {
+        // Optimization: Skip if already loaded today (unless force)
+        if !force,
+           let lastTime = dataManager.lastCacheTime,
+           Calendar.current.isDateInToday(lastTime),
+           !currencyRatesToUSD.isEmpty {
+            print("[ViewModel] Skipping redundant currencyRates fetch (past data)")
+            return
+        }
+        
         do {
             let rates = try await dataManager.fetchCurrencyRates()
             self.currencyRatesToUSD = rates

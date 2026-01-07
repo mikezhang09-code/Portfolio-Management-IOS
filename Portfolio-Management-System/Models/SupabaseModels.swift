@@ -321,8 +321,11 @@ struct SupabasePortfolioSnapshot: Codable, Identifiable {
         id = try container.decode(UUID.self, forKey: .id)
         userId = try container.decode(UUID.self, forKey: .userId)
         let dateString = try container.decode(String.self, forKey: .snapshotDate)
+        
         if let parsedDate = SupabasePortfolioSnapshot.dateFormatter.date(from: dateString) {
             snapshotDate = parsedDate
+        } else if let isoDate = ISO8601DateFormatter().date(from: dateString) {
+            snapshotDate = isoDate
         } else {
             throw DecodingError.dataCorruptedError(forKey: .snapshotDate,
                                                    in: container,
@@ -408,6 +411,8 @@ struct HistoricalPortfolioSnapshot: Codable, Identifiable {
         let dateString = try container.decode(String.self, forKey: .snapshotDate)
         if let parsedDate = HistoricalPortfolioSnapshot.dateFormatter.date(from: dateString) {
             snapshotDate = parsedDate
+        } else if let isoDate = ISO8601DateFormatter().date(from: dateString) {
+            snapshotDate = isoDate
         } else {
             throw DecodingError.dataCorruptedError(forKey: .snapshotDate,
                                                    in: container,
@@ -456,6 +461,8 @@ struct HistoricalBenchmarkSnapshot: Codable, Identifiable {
         let dateString = try container.decode(String.self, forKey: .snapshotDate)
         if let parsedDate = HistoricalBenchmarkSnapshot.dateFormatter.date(from: dateString) {
             snapshotDate = parsedDate
+        } else if let isoDate = ISO8601DateFormatter().date(from: dateString) {
+            snapshotDate = isoDate
         } else {
             throw DecodingError.dataCorruptedError(forKey: .snapshotDate,
                                                    in: container,

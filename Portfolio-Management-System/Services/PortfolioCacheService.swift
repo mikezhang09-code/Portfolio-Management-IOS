@@ -48,10 +48,12 @@ class PortfolioCacheService {
         case cashTransactions = "cache_cash_transactions"
         case stocks = "cache_stocks"
         case latestPrices = "cache_latest_prices"
+        case previousClosePrices = "cache_previous_close_prices"
         case currencyRates = "cache_currency_rates"
         case settings = "cache_settings"
         case snapshot = "cache_snapshot"
         case yesterdaySnapshot = "cache_yesterday_snapshot"
+        case todaySummary = "cache_today_summary"
         case lastCacheTime = "cache_last_update_time"
     }
     
@@ -182,6 +184,26 @@ class PortfolioCacheService {
         return result
     }
     
+    // MARK: - Previous Close Prices
+    
+    func cachePreviousClosePrices(_ prices: [String: Decimal]) {
+        let stringPrices = prices.mapValues { "\($0)" }
+        defaults.set(stringPrices, forKey: CacheKey.previousClosePrices.rawValue)
+    }
+    
+    func loadCachedPreviousClosePrices() -> [String: Decimal]? {
+        guard let stringPrices = defaults.dictionary(forKey: CacheKey.previousClosePrices.rawValue) as? [String: String] else {
+            return nil
+        }
+        var result: [String: Decimal] = [:]
+        for (key, value) in stringPrices {
+            if let decimal = Decimal(string: value) {
+                result[key] = decimal
+            }
+        }
+        return result
+    }
+    
     // MARK: - Currency Rates
     
     func cacheCurrencyRates(_ rates: [String: Decimal]) {
@@ -230,6 +252,16 @@ class PortfolioCacheService {
         load(forKey: .yesterdaySnapshot)
     }
     
+    // MARK: - Today Summary
+    
+    func cacheTodaySummary(_ summary: PortfolioSummaryCache) {
+        save(summary, forKey: .todaySummary)
+    }
+    
+    func loadCachedTodaySummary() -> PortfolioSummaryCache? {
+        load(forKey: .todaySummary)
+    }
+    
     // MARK: - Update Cache Time
     
     func updateCacheTime() {
@@ -240,8 +272,8 @@ class PortfolioCacheService {
     
     func clearCache() {
         for key in [CacheKey.positions, .cashAccounts, .accountUSDValues, .stockTransactions,
-                    .cashTransactions, .stocks, .latestPrices, .currencyRates, .settings, 
-                    .snapshot, .yesterdaySnapshot, .lastCacheTime] {
+                    .cashTransactions, .stocks, .latestPrices, .previousClosePrices, .currencyRates, .settings, 
+                    .snapshot, .yesterdaySnapshot, .todaySummary, .lastCacheTime] {
             defaults.removeObject(forKey: key.rawValue)
         }
     }
@@ -299,4 +331,13 @@ struct CachedAccountUSDValue: Codable, Identifiable {
             usdValue: usdValue
         )
     }
+}
+
+// MARK: - Portfolio Summary Cache
+
+struct PortfolioSummaryCache: Codable {
+    let todayChangeValue: Decimal
+    let todayChangePercent: Decimal
+    let gainLossValue: Decimal
+    let gainLossPercent: Decimal
 }

@@ -617,16 +617,24 @@ private struct PortfolioHeroCard: View {
                     Spacer()
                 }
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Allocation")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.75))
-                        Spacer()
-                        Text("Cash \(PortfolioFormatter.formatUSD(cashValue)) | Stocks \(PortfolioFormatter.formatUSD(holdingsValue))")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.8))
-                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        let cashPercent = Int(round(allocation.cash * 100))
+                        let stocksPercent = Int(round(allocation.stocks * 100))
+                        
+                        HStack {
+                            Text("Allocation")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.75))
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 0) {
+                                Text("Cash \(PortfolioFormatter.formatUSD(cashValue)) (\(cashPercent)%)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.white.opacity(0.8))
+                                Text("Stocks \(PortfolioFormatter.formatUSD(holdingsValue)) (\(stocksPercent)%)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                        }
                     
                     GeometryReader { geo in
                         let totalWidth = geo.size.width
@@ -848,6 +856,13 @@ struct PositionDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 14) {
+                if let name = summaryData.name {
+                    Text(name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Performance")

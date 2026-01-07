@@ -70,6 +70,10 @@ class PortfolioDataManager {
         return cacheService.hasCachedData
     }
     
+    var lastCacheTime: Date? {
+        return cacheService.lastCacheTime
+    }
+    
     func loadCachedData() -> (
         positions: [SupabasePortfolioPosition]?,
         cashAccounts: [SupabaseCashAccount]?,
@@ -81,7 +85,9 @@ class PortfolioDataManager {
         currencyRates: [String: Decimal]?,
         settings: SupabasePortfolioSettings?,
         snapshot: SupabasePortfolioSnapshot?,
-        yesterdaySnapshot: SupabasePortfolioSnapshot?
+        yesterdaySnapshot: SupabasePortfolioSnapshot?,
+        previousClosePrices: [String: Decimal]?,
+        todaySummary: PortfolioSummaryCache?
     ) {
         let positions = cacheService.loadCachedPositions()
         let cashAccounts = cacheService.loadCachedCashAccounts()
@@ -94,6 +100,7 @@ class PortfolioDataManager {
         let settings = cacheService.loadCachedSettings()
         let snapshot = cacheService.loadCachedSnapshot()
         let yesterdaySnapshot = cacheService.loadCachedYesterdaySnapshot()
+        let previousClosePrices = cacheService.loadCachedPreviousClosePrices()
         
         return (
             positions,
@@ -106,7 +113,9 @@ class PortfolioDataManager {
             currencyRates,
             settings,
             snapshot,
-            yesterdaySnapshot
+            yesterdaySnapshot,
+            previousClosePrices,
+            todaySummary: cacheService.loadCachedTodaySummary()
         )
     }
     
@@ -121,7 +130,9 @@ class PortfolioDataManager {
         currencyRates: [String: Decimal]?,
         settings: SupabasePortfolioSettings?,
         snapshot: SupabasePortfolioSnapshot?,
-        yesterdaySnapshot: SupabasePortfolioSnapshot?
+        yesterdaySnapshot: SupabasePortfolioSnapshot?,
+        previousClosePrices: [String: Decimal]?,
+        todaySummary: PortfolioSummaryCache?
     ) {
         if let p = positions { cacheService.cachePositions(p) }
         if let ca = cashAccounts { cacheService.cacheCashAccounts(ca) }
@@ -130,6 +141,8 @@ class PortfolioDataManager {
         if let ct = cashTransactions { cacheService.cacheCashTransactions(ct) }
         if let s = stocks { cacheService.cacheStocks(s) }
         if let lp = latestPrices { cacheService.cacheLatestPrices(lp) }
+        if let pcp = previousClosePrices { cacheService.cachePreviousClosePrices(pcp) }
+        if let summary = todaySummary { cacheService.cacheTodaySummary(summary) }
         if let cr = currencyRates { cacheService.cacheCurrencyRates(cr) }
         if let set = settings { cacheService.cacheSettings(set) }
         if let snap = snapshot { cacheService.cacheSnapshot(snap) }
