@@ -40,6 +40,11 @@ struct ContentView: View {
                     Label("Cash", systemImage: "banknote.fill")
                 }
             
+            CurrencyView()
+                .tabItem {
+                    Label("Currencies", systemImage: "dollarsign.arrow.circlepath")
+                }
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gear")
