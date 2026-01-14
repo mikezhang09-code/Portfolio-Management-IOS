@@ -2,7 +2,6 @@ import Foundation
 import SwiftUI
 import Combine
 
-@MainActor
 final class CurrencyViewModel: ObservableObject {
     @Published var rates: [CurrencyRate] = []
     @Published var isLoading: Bool = false
@@ -52,21 +51,6 @@ final class CurrencyViewModel: ObservableObject {
             return direct.rate
         }
         if let inverse = rates.first(where: { $0.base == to && $0.quote == from }), inverse.rate != 0 {
-            return 1 / inverse.rate
-        }
-        // Derive via USD when direct pair missing (e.g., CNY/HKD)
-        if let usdToFrom = usdRate(to: from), let usdToTo = usdRate(to: to), usdToFrom != 0 {
-            return usdToTo / usdToFrom
-        }
-        return nil
-    }
-
-    private func usdRate(to currency: FiatCurrency) -> Double? {
-        if currency == .usd { return 1 }
-        if let direct = rates.first(where: { $0.base == .usd && $0.quote == currency }) {
-            return direct.rate
-        }
-        if let inverse = rates.first(where: { $0.base == currency && $0.quote == .usd }), inverse.rate != 0 {
             return 1 / inverse.rate
         }
         return nil
